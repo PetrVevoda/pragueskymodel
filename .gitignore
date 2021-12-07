@@ -2,3 +2,4 @@
 /x64
 *.exr
 *.dat
+.clang-format
