@@ -83,12 +83,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="miniz.c" />
+    <ClCompile Include="PragueSkyModelTest.cpp" />
     <ClCompile Include="PragueSkyModel.cpp" />
-    <ClCompile Include="PragueSkyModelLib.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="miniz.h" />
-    <ClInclude Include="PragueSkyModelLib.h" />
+    <ClInclude Include="PragueSkyModel.h" />
     <ClInclude Include="tinyexr.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

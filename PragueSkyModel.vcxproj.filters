@@ -15,10 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="PragueSkyModel.cpp">
+    <ClCompile Include="PragueSkyModelTest.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="PragueSkyModelLib.cpp">
+    <ClCompile Include="PragueSkyModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="miniz.c">
@@ -26,7 +26,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="PragueSkyModelLib.h">
+    <ClInclude Include="PragueSkyModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="tinyexr.h">
