@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cmath>
-#include <io.h>
 #include <limits>
 #include "PragueSkyModel.h"
 
@@ -179,10 +178,10 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     // Read metadata
 
     // Structure of the metadata part of the data file:
-    // turbidities       (1 * int),  turbidity_vals (turbidities * double),
-    // albedos           (1 * int),  albedo_vals    (albedos * double),
-    // altitudes         (1 * int),  altitude_vals  (altitudes * double),
-    // elevations        (1 * int),  elevation_vals (elevations * double),
+    // turbidity_count   (1 * int),  turbidities (turbidity_count * double),
+    // albedo_count      (1 * int),  albedos    (albedo_count * double),
+    // altitude_count    (1 * int),  altitudes  (altitude_count * double),
+    // elevation_count   (1 * int),  elevations (elevation_count * double),
     // channels          (1 * int),  channel_start  (1 * double), channel_width (1
     // * double), tensor_components (1 * int), sun_nbreaks       (1 * int),
     // sun_breaks     (sun_nbreaks * double), zenith_nbreaks    (1 * int),
@@ -191,41 +190,45 @@ void PragueSkyModel::readRadiance(FILE* handle) {
 
     int valsRead;
 
-    valsRead = fread(&turbidities, sizeof(int), 1, handle);
-    if (valsRead != 1 || turbidities < 1)
+    int turbidity_count = 0;
+    valsRead            = fread(&turbidity_count, sizeof(int), 1, handle);
+    if (valsRead != 1 || turbidity_count < 1)
+        printErrorAndExit("Error reading sky model data: turbidity_count");
+
+    turbidities.resize(turbidity_count);
+    valsRead = fread(turbidities.data(), sizeof(double), turbidity_count, handle);
+    if (valsRead != turbidity_count)
         printErrorAndExit("Error reading sky model data: turbidities");
 
-    turbidity_vals = ALLOC_ARRAY(double, turbidities);
-    valsRead       = fread(turbidity_vals, sizeof(double), turbidities, handle);
-    if (valsRead != turbidities)
-        printErrorAndExit("Error reading sky model data: turbidity_vals");
+    int albedo_count = 0;
+    valsRead = fread(&albedo_count, sizeof(int), 1, handle);
+    if (valsRead != 1 || albedo_count < 1)
+        printErrorAndExit("Error reading sky model data: albedo_count");
 
-    valsRead = fread(&albedos, sizeof(int), 1, handle);
-    if (valsRead != 1 || albedos < 1)
+    albedos.resize(albedo_count);
+    valsRead    = fread(albedos.data(), sizeof(double), albedo_count, handle);
+    if (valsRead != albedo_count)
         printErrorAndExit("Error reading sky model data: albedos");
 
-    albedo_vals = ALLOC_ARRAY(double, albedos);
-    valsRead    = fread(albedo_vals, sizeof(double), albedos, handle);
-    if (valsRead != albedos)
-        printErrorAndExit("Error reading sky model data: albedo_vals");
+    int altitude_count = 0;
+    valsRead = fread(&altitude_count, sizeof(int), 1, handle);
+    if (valsRead != 1 || altitude_count < 1)
+        printErrorAndExit("Error reading sky model data: altitude_count");
 
-    valsRead = fread(&altitudes, sizeof(int), 1, handle);
-    if (valsRead != 1 || altitudes < 1)
+    altitudes.resize(altitude_count);
+    valsRead      = fread(altitudes.data(), sizeof(double), altitude_count, handle);
+    if (valsRead != altitude_count)
         printErrorAndExit("Error reading sky model data: altitudes");
 
-    altitude_vals = ALLOC_ARRAY(double, altitudes);
-    valsRead      = fread(altitude_vals, sizeof(double), altitudes, handle);
-    if (valsRead != altitudes)
-        printErrorAndExit("Error reading sky model data: altitude_vals");
+    int elevation_count = 0;
+    valsRead = fread(&elevation_count, sizeof(int), 1, handle);
+    if (valsRead != 1 || elevation_count < 1)
+        printErrorAndExit("Error reading sky model data: elevation_count");
 
-    valsRead = fread(&elevations, sizeof(int), 1, handle);
-    if (valsRead != 1 || elevations < 1)
+    elevations.resize(elevation_count);
+    valsRead       = fread(elevations.data(), sizeof(double), elevation_count, handle);
+    if (valsRead != elevation_count)
         printErrorAndExit("Error reading sky model data: elevations");
-
-    elevation_vals = ALLOC_ARRAY(double, elevations);
-    valsRead       = fread(elevation_vals, sizeof(double), elevations, handle);
-    if (valsRead != elevations)
-        printErrorAndExit("Error reading sky model data: elevation_vals");
 
     valsRead = fread(&channels, sizeof(int), 1, handle);
     if (valsRead != 1 || channels < 1)
@@ -281,7 +284,7 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     emph_offset = sun_offset + tensor_components * sun_stride;
 
     total_coefs_single_config = emph_offset + 2 * emph_nbreaks - 2; // this is for one specific configuration
-    total_configs             = channels * elevations * altitudes * albedos * turbidities;
+    total_configs             = channels * elevations.size() * altitudes.size() * albedos.size() * turbidities.size();
     total_coefs_all_configs   = total_coefs_single_config * total_configs;
 
     // Read data
@@ -290,7 +293,7 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     // [[[[[[ sun_coefs (sun_nbreaks * half), zenith_scale (1 * double),
     // zenith_coefs (zenith_nbreaks * half) ] * tensor_components, emph_coefs
     // (emph_nbreaks * half) ]
-    //   * channels ] * elevations ] * altitudes ] * albedos ] * turbidities
+    //   * channels ] * elevation_count ] * altitude_count ] * albedo_count ] * turbidity_count
 
     int offset       = 0;
     radiance_dataset = ALLOC_ARRAY(double, total_coefs_all_configs);
@@ -448,7 +451,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     // Structure of the data part of the data file:
     // [[[[[[ sun_coefs_pol (sun_nbreaks_pol * float), zenith_coefs_pol
     // (zenith_nbreaks_pol * float) ] * tensor_components_pol]
-    //   * channels ] * elevations ] * altitudes ] * albedos ] * turbidities
+    //   * channels ] * elevation_count ] * altitude_count ] * albedo_count ] * turbidity_count
 
     int offset               = 0;
     polarisation_dataset     = ALLOC_ARRAY(double, total_coefs_all_configs_pol);
@@ -483,31 +486,19 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 // Constructor & destructor
 ///////////////////////////////////////////////
 
-PragueSkyModel::PragueSkyModel(const char* library_path) {
-    char filename[1024];
-
-    sprintf(filename, "%s", library_path);
-
-    if (_access(filename, 0 | 4) != 0) {
+PragueSkyModel::PragueSkyModel(const char* filename) {
+    if (FILE* handle = fopen(filename, "rb")) {
+        // Read data
+        readRadiance(handle);
+        readTransmittance(handle);
+        readPolarisation(handle);
+        fclose(handle);
+    } else {
         printErrorAndExit("Sky model dataset not found");
     }
-
-    FILE* handle = fopen(filename, "rb");
-
-    // Read data
-    readRadiance(handle);
-    readTransmittance(handle);
-    readPolarisation(handle);
-
-    fclose(handle);
 }
 
 PragueSkyModel::~PragueSkyModel() {
-    free(turbidity_vals);
-    free(albedo_vals);
-    free(altitude_vals);
-    free(elevation_vals);
-
     free(sun_breaks);
     free(zenith_breaks);
     free(emph_breaks);
@@ -681,17 +672,17 @@ void findInArray(const float* arr, const int arrLength, const double value, int*
     }
 }
 
-double mapParameter(const double param, const int value_count, const double* values) {
+double mapParameter(const double param,  const std::vector<double>& values) {
     double mapped = 0.0;
 
-    if (param < values[0]) {
+    if (param < values.front()) {
         mapped = 0.0;
-    } else if (param > values[value_count - 1]) {
-        mapped = (double)value_count - 1.0;
+    } else if (param > values.back()) {
+        mapped = (double)values.size() - 1.0;
     } else {
-        for (int v = 0; v < value_count; ++v) {
+        for (int v = 0; v < values.size(); ++v) {
             const double val = values[v];
-            if (fabs(val - param) < 1e-6) {
+            if (std::abs(val - param) < 1e-6) {
                 mapped = v;
                 break;
             } else if (param < val) {
@@ -727,9 +718,9 @@ const double* PragueSkyModel::controlParams(const double* dataset,
                                             const int     albedo,
                                             const int     wavelength) const {
     return dataset + (total_coefs_single_config *
-                      (wavelength + channels * elevation + channels * elevations * altitude +
-                       channels * elevations * altitudes * albedo +
-                       channels * elevations * altitudes * albedos * turbidity));
+                      (wavelength + channels * elevation + channels * elevations.size() * altitude +
+                       channels * elevations.size() * altitudes.size() * albedo +
+                       channels * elevations.size() * altitudes.size() * albedos.size() * turbidity));
 }
 
 double PragueSkyModel::reconstruct(const double  gamma,
@@ -802,7 +793,7 @@ double PragueSkyModel::interpolateElevation(double elevation,
     double res_low =
         reconstruct(gamma, alpha, zero, gamma_segment, alpha_segment, zero_segment, control_params_low);
 
-    if (factor < 1e-6 || elevation_low >= (elevations - 1)) {
+    if (factor < 1e-6 || elevation_low >= (elevations.size() - 1)) {
         return res_low;
     }
 
@@ -846,7 +837,7 @@ double PragueSkyModel::interpolateAltitude(double elevation,
                                           alpha_segment,
                                           zero_segment);
 
-    if (factor < 1e-6 || altitude_low >= (altitudes - 1)) {
+    if (factor < 1e-6 || altitude_low >= (altitudes.size() - 1)) {
         return res_low;
     }
 
@@ -891,7 +882,7 @@ double PragueSkyModel::interpolateVisibility(double elevation,
                                          alpha_segment,
                                          zero_segment);
 
-    if (factor < 1e-6 || turbidity_low >= (turbidities - 1)) {
+    if (factor < 1e-6 || turbidity_low >= (turbidities.size() - 1)) {
         return res_low;
     }
 
@@ -936,7 +927,7 @@ double PragueSkyModel::interpolateAlbedo(double elevation,
                                            alpha_segment,
                                            zero_segment);
 
-    if (factor < 1e-6 || albedo_low >= (albedos - 1)) {
+    if (factor < 1e-6 || albedo_low >= (albedos.size() - 1)) {
         return res_low;
     }
 
@@ -994,10 +985,10 @@ double PragueSkyModel::skyRadiance(const double theta,
 
     // Translate parameter values to indices
 
-    const double turbidity_control = mapParameter(turbidity, turbidities, turbidity_vals);
-    const double albedo_control    = mapParameter(albedo, albedos, albedo_vals);
-    const double altitude_control  = mapParameter(altitude, altitudes, altitude_vals);
-    const double elevation_control = mapParameter(radiansToDegrees(elevation), elevations, elevation_vals);
+    const double turbidity_control = mapParameter(turbidity, turbidities);
+    const double albedo_control    = mapParameter(albedo, albedos);
+    const double altitude_control  = mapParameter(altitude, altitudes);
+    const double elevation_control = mapParameter(radiansToDegrees(elevation), elevations);
 
     const double channel_control = (wavelength - channel_start) / channel_width;
 
@@ -1396,7 +1387,7 @@ double PragueSkyModel::interpolateElevationPol(double elevation,
 
     double res_low = reconstructPol(gamma, alpha, gamma_segment, alpha_segment, control_params_low);
 
-    if (factor < 1e-6 || elevation_low >= (elevations - 1)) {
+    if (factor < 1e-6 || elevation_low >= (elevations.size() - 1)) {
         return res_low;
     }
 
@@ -1435,7 +1426,7 @@ double PragueSkyModel::interpolateAltitudePol(double elevation,
                                              gamma_segment,
                                              alpha_segment);
 
-    if (factor < 1e-6 || altitude_low >= (altitudes - 1)) {
+    if (factor < 1e-6 || altitude_low >= (altitudes.size() - 1)) {
         return res_low;
     }
 
@@ -1496,7 +1487,7 @@ double PragueSkyModel::interpolateAlbedoPol(double elevation,
                                               gamma_segment,
                                               alpha_segment);
 
-    if (factor < 1e-6 || albedo_low >= (albedos - 1)) {
+    if (factor < 1e-6 || albedo_low >= (albedos.size() - 1)) {
         return res_low;
     }
 
@@ -1549,10 +1540,10 @@ double PragueSkyModel::polarisation(const double theta,
 
     // Translate parameter values to indices
 
-    const double turbidity_control = mapParameter(turbidity, turbidities, turbidity_vals);
-    const double albedo_control    = mapParameter(albedo, albedos, albedo_vals);
-    const double altitude_control  = mapParameter(altitude, altitudes, altitude_vals);
-    const double elevation_control = mapParameter(radiansToDegrees(elevation), elevations, elevation_vals);
+    const double turbidity_control = mapParameter(turbidity, turbidities);
+    const double albedo_control    = mapParameter(albedo, albedos);
+    const double altitude_control  = mapParameter(altitude, altitudes);
+    const double elevation_control = mapParameter(radiansToDegrees(elevation),  elevations);
 
     const double channel_control = (wavelength - channel_start) / channel_width;
     if (channel_control >= channels || channel_control < 0.)

@@ -1,3 +1,5 @@
+#include <vector>
+
 class PragueSkyModel {
 public:
     class Vector3 {
@@ -31,17 +33,10 @@ public:
 private:
     // Radiance metadata
 
-    int     turbidities;
-    double* turbidity_vals;
-
-    int     albedos;
-    double* albedo_vals;
-
-    int     altitudes;
-    double* altitude_vals;
-
-    int     elevations;
-    double* elevation_vals;
+    std::vector<double> turbidities;
+    std::vector<double> albedos;
+    std::vector<double> altitudes;
+    std::vector<double> elevations;
 
     int    channels;
     double channel_start;
