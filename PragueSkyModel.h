@@ -56,6 +56,17 @@ public:
         bool isZero() const { return x == 0.0 && y == 0.0 && z == 0.0; }
     };
 
+    struct Parameters {
+        double theta;
+        double gamma;
+        double shadow;
+        double zero;
+        double elevation;
+        double altitude;
+        double visibility;
+        double albedo;
+    };
+
 private:
     int    channels;
     double channelStart;
@@ -126,31 +137,19 @@ public:
 
     //   This computes the canonical angles of the model from
     //   a normalised view vector and solar elevation.
-    void computeAngles(const Vector3& viewpoint,
-                       const Vector3& viewDirection,
-                       const double   groundLevelSolarElevationAtOrigin,
-                       const double   groundLevelSolarAzimuthAtOrigin,
-                       double*        solarElevationAtViewpoint,
-                       double*        altitudeOfViewpoint,
-                       double*        theta,
-                       double*        gamma,
-                       double*        shadow,
-                       double*        zero) const;
+    Parameters computeParameters(const Vector3& viewpoint,
+                                 const Vector3& viewDirection,
+                                 const double   groundLevelSolarElevationAtOrigin,
+                                 const double   groundLevelSolarAzimuthAtOrigin,
+                                 const double   visibility,
+                                 const double   albedo) const;
 
     //   theta  - zenith angle
     //   gamma  - sun angle
     //   shadow - angle from the shadow point, which is further 90 degrees above
     //   the sun zero   - angle from the zero point, which lies at the horizon
     //   below the sun altitude wavelength
-    double skyRadiance(const double theta,
-                       const double gamma,
-                       const double shadow,
-                       const double zero,
-                       const double elevation,
-                       const double altitude,
-                       const double visibility,
-                       const double albedo,
-                       const double wavelength) const;
+    double skyRadiance(const Parameters& params, const double wavelength) const;
 
     /* ----------------------------------------------------------------------------
 
@@ -162,23 +161,9 @@ public:
 
     ----------------------------------------------------------------------------
   */
-    double sunRadiance(const double theta,
-                       const double gamma,
-                       const double shadow,
-                       const double zero,
-                       const double elevation,
-                       const double altitude,
-                       const double visibility,
-                       const double albedo,
-                       const double wavelength) const;
+	double sunRadiance(const Parameters& params, const double wavelength) const;
 
-    double polarisation(const double theta,
-                        const double gamma,
-                        const double elevation,
-                        const double altitude,
-                        const double visibility,
-                        const double albedo,
-                        const double wavelength) const;
+	double polarisation(const Parameters& params, const double wavelength) const;
 
     /* ----------------------------------------------------------------------------
 
@@ -190,18 +175,16 @@ public:
 
     ----------------------------------------------------------------------------
   */
-    double transmittance(const double theta,
-                         const double altitude,
-                         const double visibility,
-                         const double wavelength,
-                         const double distance) const;
+	double transmittance(const Parameters& params,
+		const double wavelength,
+		const double distance) const;
 
 private:
     void readRadiance(FILE* handle);
     void readTransmittance(FILE* handle);
     void readPolarisation(FILE* handle);
 
-    std::vector<double>::const_iterator PragueSkyModel::controlParams(const std::vector<double>& dataset,
+    std::vector<double>::const_iterator controlParams(const std::vector<double>& dataset,
                                 const int     totalCoefsSingleConfig,
                                 const int     elevation,
                                 const int     altitude,

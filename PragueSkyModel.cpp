@@ -473,52 +473,52 @@ PragueSkyModel::PragueSkyModel(const std::string& filename) {
 void computeAltitudeAndElevation(const PragueSkyModel::Vector3& viewpoint,
                                  const double                   groundLevelSolarElevationAtOrigin,
                                  const double                   groundLevelSolarAzimuthAtOrigin,
-                                 double*                        solarElevationAtViewpoint,
-                                 double*                        altitudeOfViewpoint,
-                                 double*                        distanceToView,
-                                 PragueSkyModel::Vector3*       directionToZenithN,
-                                 PragueSkyModel::Vector3*       directionToSunN) {
+                                 double&                        solarElevationAtViewpoint,
+                                 double&                        altitudeOfViewpoint,
+                                 double&                        distanceToView,
+                                 PragueSkyModel::Vector3&       directionToZenithN,
+                                 PragueSkyModel::Vector3&       directionToSunN) {
     // Direction to zenith
 
     PragueSkyModel::Vector3 centerOfTheEarth  = PragueSkyModel::Vector3(0.0, 0.0, -PLANET_RADIUS);
     PragueSkyModel::Vector3 directionToZenith = viewpoint - centerOfTheEarth;
-    *directionToZenithN                       = normalize(directionToZenith);
+    directionToZenithN                       = normalize(directionToZenith);
 
     // Altitude of viewpoint
 
-    *distanceToView = magnitude(directionToZenith);
+    distanceToView = magnitude(directionToZenith);
     // ASSERT_DOUBLE_LARGER_THAN(*distanceToView, -0.0001);
-    *distanceToView = std::max(*distanceToView, 0.0);
+    distanceToView = std::max(distanceToView, 0.0);
 
-    *altitudeOfViewpoint = *distanceToView - PLANET_RADIUS;
-    *altitudeOfViewpoint = std::max(*altitudeOfViewpoint, 0.0);
+    altitudeOfViewpoint = distanceToView - PLANET_RADIUS;
+    altitudeOfViewpoint = std::max(altitudeOfViewpoint, 0.0);
 
     // Direction to sun
 
-    directionToSunN->x = cos(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
-    directionToSunN->y = sin(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
-    directionToSunN->z = sin(groundLevelSolarElevationAtOrigin);
+    directionToSunN.x = cos(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
+    directionToSunN.y = sin(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
+    directionToSunN.z = sin(groundLevelSolarElevationAtOrigin);
 
     // Solar elevation at viewpoint (more precisely, solar elevation at the point
     // on the ground directly below viewpoint)
 
-    const double dotZenithSun = dot(*directionToZenithN, *directionToSunN);
+    const double dotZenithSun = dot(directionToZenithN, directionToSunN);
 
-    *solarElevationAtViewpoint = 0.5 * PI - acos(dotZenithSun);
+    solarElevationAtViewpoint = 0.5 * PI - acos(dotZenithSun);
 }
 
-void PragueSkyModel::computeAngles(const Vector3& viewpoint,
-                                   const Vector3& viewDirection,
-                                   const double   groundLevelSolarElevationAtOrigin,
-                                   const double   groundLevelSolarAzimuthAtOrigin,
-                                   double*        solarElevationAtViewpoint,
-                                   double*        altitudeOfViewpoint,
-                                   double*        theta,
-                                   double*        gamma,
-                                   double*        shadow,
-                                   double*        zero) const {
+PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& viewpoint,
+                                                             const Vector3& viewDirection,
+                                                             const double   groundLevelSolarElevationAtOrigin,
+                                                             const double   groundLevelSolarAzimuthAtOrigin,
+                                                             const double   visibility,
+                                                             const double   albedo) const {
     // ASSERT_VALID_DOUBLE(groundLevelSolarElevationAtOrigin);
     // ASSERT_VALID_DOUBLE(groundLevelSolarAzimuthAtOrigin);
+
+    Parameters params;
+    params.visibility = visibility;
+    params.albedo = albedo;
 
     // Shift viewpoint about safety altitude up
 
@@ -538,11 +538,11 @@ void PragueSkyModel::computeAngles(const Vector3& viewpoint,
     computeAltitudeAndElevation(shiftedViewpoint,
                                 groundLevelSolarElevationAtOrigin,
                                 groundLevelSolarAzimuthAtOrigin,
-                                solarElevationAtViewpoint,
-                                altitudeOfViewpoint,
-                                &distanceToView,
-                                &directionToZenithN,
-                                &directionToSunN);
+                                params.elevation,
+                                params.altitude,
+                                distanceToView,
+                                directionToZenithN,
+                                directionToSunN);
 
     // Altitude-corrected view direction
 
@@ -565,8 +565,7 @@ void PragueSkyModel::computeAngles(const Vector3& viewpoint,
     // Sun angle (gamma) - no correction
 
     double dotProductSun = dot(viewDirectionN, directionToSunN);
-
-    *gamma = acos(dotProductSun);
+    params.gamma = acos(dotProductSun);
 
     // Shadow angle - requires correction
 
@@ -579,21 +578,20 @@ void PragueSkyModel::computeAngles(const Vector3& viewpoint,
                                        sin(shadowAngle));
 
     const double dotProductShadow = dot(correctViewN, shadowDirectionN);
-
-    *shadow = acos(dotProductShadow);
+    params.shadow = acos(dotProductShadow);
 
     // Zenith angle (theta) - corrected version stored in otherwise unused zero
     // angle
 
     double cosThetaCor = dot(correctViewN, directionToZenithN);
-
-    *zero = acos(cosThetaCor);
+    params.zero = acos(cosThetaCor);
 
     // Zenith angle (theta) - uncorrected version goes outside
 
     double cosTheta = dot(viewDirectionN, directionToZenithN);
+    params.theta = acos(cosTheta);
 
-    *theta = acos(cosTheta);
+    return params;
 }
 
 ///////////////////////////////////////////////
@@ -921,21 +919,13 @@ double PragueSkyModel::interpolateWavelength(double elevation,
                              zeroSegment);
 }
 
-double PragueSkyModel::skyRadiance(const double theta,
-                                   const double gamma,
-                                   const double shadow,
-                                   const double zero,
-                                   const double elevation,
-                                   const double altitude,
-                                   const double visibility,
-                                   const double albedo,
-                                   const double wavelength) const {
+double PragueSkyModel::skyRadiance(const Parameters& params, const double wavelength) const {
     // Translate parameter values to indices
 
-    const double visibilityControl = mapParameter(visibility, visibilitiesRad);
-    const double albedoControl    = mapParameter(albedo, albedosRad);
-    const double altitudeControl  = mapParameter(altitude, altitudesRad);
-    const double elevationControl = mapParameter(radiansToDegrees(elevation), elevationsRad);
+    const double visibilityControl = mapParameter(params.visibility, visibilitiesRad);
+    const double albedoControl     = mapParameter(params.albedo, albedosRad);
+    const double altitudeControl   = mapParameter(params.altitude, altitudesRad);
+    const double elevationControl  = mapParameter(radiansToDegrees(params.elevation), elevationsRad);
 
     const double channelControl = (wavelength - channelStart) / channelWidth;
 
@@ -944,20 +934,20 @@ double PragueSkyModel::skyRadiance(const double theta,
 
     // Get params corresponding to the indices, reconstruct result and interpolate
 
-    const double alpha = elevation < 0.0 ? shadow : zero;
+    const double alpha = params.elevation < 0.0 ? params.shadow : params.zero;
 
-    const int gammaSegment = findSegment(gamma, sunBreaksRad);
+    const int gammaSegment = findSegment(params.gamma, sunBreaksRad);
     const int alphaSegment = findSegment(alpha, zenithBreaksRad);
-    const int zeroSegment  = findSegment(zero, emphBreaksRad);
+    const int zeroSegment  = findSegment(params.zero, emphBreaksRad);
 
     const double res = interpolateWavelength(elevationControl,
                                              altitudeControl,
                                              visibilityControl,
                                              albedoControl,
                                              channelControl,
-                                             gamma,
+                                             params.gamma,
                                              alpha,
-                                             zero,
+                                             params.zero,
                                              gammaSegment,
                                              alphaSegment,
                                              zeroSegment);
@@ -971,15 +961,7 @@ double PragueSkyModel::skyRadiance(const double theta,
 // Sun radiance
 ///////////////////////////////////////////////
 
-double PragueSkyModel::sunRadiance(const double theta,
-                                   const double gamma,
-                                   const double shadow,
-                                   const double zero,
-                                   const double elevation,
-                                   const double altitude,
-                                   const double visibility,
-                                   const double albedo,
-                                   const double wavelength) const {
+double PragueSkyModel::sunRadiance(const Parameters& params, const double wavelength) const {
     double idx         = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
     double sunRadiance = 0.0;
 
@@ -991,11 +973,7 @@ double PragueSkyModel::sunRadiance(const double theta,
         // ASSERT_POSITIVE_DOUBLE(sunRadiance);
     }
 
-    double tau = PragueSkyModel::transmittance(theta,
-                                               altitude,
-                                               visibility,
-                                               wavelength,
-                                               std::numeric_limits<double>::max());
+    double tau = PragueSkyModel::transmittance(params, wavelength, std::numeric_limits<double>::max());
     // ASSERT_UNIT_RANGE_DOUBLE(tau);
 
     return sunRadiance * tau;
@@ -1211,9 +1189,7 @@ double PragueSkyModel::calcTransmittanceSVD(const double a,
     return trans;
 }
 
-double PragueSkyModel::transmittance(const double theta,
-                                     const double altitude,
-                                     const double visibility,
+double PragueSkyModel::transmittance(const Parameters& params,
                                      const double wavelength,
                                      const double distance) const {
     /*ASSERT_DOUBLE_WITHIN_RANGE(theta, 0.0, PI);
@@ -1236,7 +1212,7 @@ double PragueSkyModel::transmittance(const double theta,
     double altitudeFactor;
     int    altitudeInc;
     findInArray(altitudesTrans,
-                altitude,
+        params.altitude,
                 &altitudeLow,
                 &altitudeInc,
                 &altitudeFactor);
@@ -1247,7 +1223,7 @@ double PragueSkyModel::transmittance(const double theta,
     int    visibilityLow;
     double visibilityW;
     int    visibilityInc;
-    findInArray(visibilitiesTrans, visibility, &visibilityLow, &visibilityInc, &visibilityW);
+    findInArray(visibilitiesTrans, params.visibility, &visibilityLow, &visibilityInc, &visibilityW);
     /*ASSERT_INTEGER_WITHIN_RANGE(visibilityLow, 0, 2);
   ASSERT_DOUBLE_WITHIN_RANGE(visibilityW, 0.0, 1.0);
   ASSERT_INTEGER_WITHIN_RANGE(visibilityInc, 0, 1);*/
@@ -1255,7 +1231,7 @@ double PragueSkyModel::transmittance(const double theta,
     // Calculate normalized and non-linearly scaled position in the atmosphere
     double a;
     double d;
-    toAD(theta, distance, altitude, &a, &d);
+    toAD(params.theta, distance, params.altitude, &a, &d);
     /*ASSERT_NONNEGATIVE_DOUBLE(a);
     ASSERT_NONNEGATIVE_DOUBLE(d);*/
 
@@ -1457,13 +1433,7 @@ double PragueSkyModel::interpolateWavelengthPol(double elevation,
                                 alphaSegment);
 }
 
-double PragueSkyModel::polarisation(const double theta,
-                                    const double gamma,
-                                    const double elevation,
-                                    const double altitude,
-                                    const double visibility,
-                                    const double albedo,
-                                    const double wavelength) const {
+double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
     // If no polarisation data available
     if (rankPol == 0) {
         return 0.0;
@@ -1471,10 +1441,10 @@ double PragueSkyModel::polarisation(const double theta,
 
     // Translate parameter values to indices
 
-    const double visibilityControl = mapParameter(visibility, visibilitiesRad);
-    const double albedoControl    = mapParameter(albedo, albedosRad);
-    const double altitudeControl  = mapParameter(altitude, altitudesRad);
-    const double elevationControl = mapParameter(radiansToDegrees(elevation),  elevationsRad);
+    const double visibilityControl = mapParameter(params.visibility, visibilitiesRad);
+    const double albedoControl     = mapParameter(params.albedo, albedosRad);
+    const double altitudeControl   = mapParameter(params.altitude, altitudesRad);
+    const double elevationControl  = mapParameter(radiansToDegrees(params.elevation), elevationsRad);
 
     const double channelControl = (wavelength - channelStart) / channelWidth;
     if (channelControl >= channels || channelControl < 0.)
@@ -1482,16 +1452,16 @@ double PragueSkyModel::polarisation(const double theta,
 
     // Get params corresponding to the indices, reconstruct result and interpolate
 
-    const int gammaSegment = findSegment(gamma, sunBreaksPol);
-    const int thetaSegment = findSegment(theta, zenithBreaksPol);
+    const int gammaSegment = findSegment(params.gamma, sunBreaksPol);
+    const int thetaSegment = findSegment(params.theta, zenithBreaksPol);
 
     return -interpolateWavelengthPol(elevationControl,
                                      altitudeControl,
                                      visibilityControl,
                                      albedoControl,
                                      channelControl,
-                                     gamma,
-                                     theta,
+                                     params.gamma,
+                                     params.theta,
                                      gammaSegment,
                                      thetaSegment);
 }

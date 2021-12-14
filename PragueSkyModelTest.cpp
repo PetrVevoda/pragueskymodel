@@ -6,22 +6,34 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+// For saving the result to an EXR file.
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 
 #include "PragueSkyModel.h"
 
-using Spectrum = std::array<double, 11>;
+
 using Vector3  = PragueSkyModel::Vector3;
 
-///////////////////////////////////////////////
-// Command line
-///////////////////////////////////////////////
+// We use 11-channel spectrum for querying the model. The wavelengths samples are placed at centers of
+// spectral bins used by the model.
+constexpr int    SPECTRUM_CHANNELS      = 11;
+constexpr double SPECTRUM_STEP          = 40;
+using Spectrum                          = std::array<double, SPECTRUM_CHANNELS>;
+constexpr Spectrum SPECTRUM_WAVELENGTHS = { 340.0, 380.0, 420.0, 460.0, 500.0, 540.0,
+                                            580.0, 620.0, 660.0, 700.0, 740.0 };
 
+
+/////////////////////////////////////////////////////////////////////////////////////
+// Command line
+/////////////////////////////////////////////////////////////////////////////////////
+
+/// Checks if given command-line option was used.
 bool cmdOptionExists(char** begin, char** end, const std::string& option) {
     return std::find(begin, end, option) != end;
 }
 
+/// Tries to get string value of given command-line option. Returns default value if not successful.
 std::string getStringCmdOption(char**             begin,
                                char**             end,
                                const std::string& option,
@@ -34,6 +46,7 @@ std::string getStringCmdOption(char**             begin,
     }
 }
 
+/// Tries to get double value of given command-line option. Returns default value if not successful.
 double getDoubleCmdOption(char** begin, char** end, const std::string& option, const double defaultValue) {
     char** itr = std::find(begin, end, option);
     if (itr != end && ++itr != end) {
@@ -47,6 +60,7 @@ double getDoubleCmdOption(char** begin, char** end, const std::string& option, c
     return defaultValue;
 }
 
+/// Tries to get integer value of given command-line option. Returns default value if not successful.
 int getIntCmdOption(char** begin, char** end, const std::string& option, const int defaultValue) {
     char** itr = std::find(begin, end, option);
     if (itr != end && ++itr != end) {
@@ -60,37 +74,33 @@ int getIntCmdOption(char** begin, char** end, const std::string& option, const i
     return defaultValue;
 }
 
-///////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Conversion functions
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 double degreesToRadians(const double degrees) {
     return degrees * M_PI / 180.0;
 }
 
+/// Computes direction corresponding to given pixel coordinates in fisheye projection.
 Vector3 pixelToDirection(int x, int y, int resolution) {
-    // make circular image area in center of image
-    double radius  = resolution / 2;
-    double scaledx = (x - radius) / radius;
-    double scaledy = (y - radius) / radius;
-    double denom   = scaledx * scaledx + scaledy * scaledy + 1;
+    // Make circular image area in center of image.
+    const double radius  = resolution / 2;
+    const double scaledx = (x - radius) / radius;
+    const double scaledy = (y - radius) / radius;
+    const double denom   = scaledx * scaledx + scaledy * scaledy + 1;
 
     if (denom > 2.0) {
-        // outside image area
+        // Outside image area.
         return Vector3();
     } else {
-        // stereographic mapping
+        // Stereographic mapping.
         return Vector3(2.0 * scaledx / denom, 2.0 * scaledy / denom, -(denom - 2.0) / denom);
     }
 }
 
-constexpr std::array<double, 11> wavelengths    = { 340.0, 380.0, 420.0, 460.0, 500.0, 540.0,
-                                                 580.0, 620.0, 660.0, 700.0, 740.0 };
-constexpr double                 wavelengthStep = 40;
-
-constexpr float SPECTRAL_WAVELENGTH_0 = 360.f;
-constexpr float SPECTRAL_STEP         = 5.f;
-
+// Spectral response table used for converting spectrum to XYZ.
 const Vector3 SPECTRAL_RESPONSE[] = {
     Vector3(0.000129900000f, 0.000003917000f, 0.000606100000f),
     Vector3(0.000232100000f, 0.000006965000f, 0.001086000000f),
@@ -188,15 +198,18 @@ const Vector3 SPECTRAL_RESPONSE[] = {
     Vector3(0.000001776509f, 0.000000641530f, 0.000000000000f),
     Vector3(0.000001251141f, 0.000000451810f, 0.000000000000f),
 };
+constexpr float SPECTRAL_RESPONSE_START = 360.f;
+constexpr float SPECTRAL_RESPONSE_STEP  = 5.f;
 
+/// Converts given spectrum to sRGB.
 Vector3 spectrumToRGB(const Spectrum& spectrum) {
     // Spectrum to XYZ
     Vector3 xyz = Vector3();
-    for (int wl = 0; wl < 11; wl++) {
-        const int responseIdx = (wavelengths[wl] - SPECTRAL_WAVELENGTH_0) / SPECTRAL_STEP;
+    for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
+        const int responseIdx = (SPECTRUM_WAVELENGTHS[wl] - SPECTRAL_RESPONSE_START) / SPECTRAL_RESPONSE_STEP;
         xyz                   = xyz + SPECTRAL_RESPONSE[responseIdx] * spectrum[wl];
     }
-    xyz = xyz * wavelengthStep;
+    xyz = xyz * SPECTRUM_STEP;
 
     // XYZ to sRGB
     Vector3 rgb = Vector3();
@@ -207,13 +220,15 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
     return rgb;
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // EXR
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 // Function for saving image data into an EXR file. Code from TinyEXR.
-void saveEXR(const float* rgb, const int width, const int height, const std::string outfilename) {
-    // HEADER
+void saveEXR(const std::vector<float>& rgb, const int width, const int height, const std::string outfilename) {
+    // Header
 
     EXRHeader header;
     InitEXRHeader(&header);
@@ -236,41 +251,43 @@ void saveEXR(const float* rgb, const int width, const int height, const std::str
                                                                    // in .EXR
     }
 
-    // IMAGE
+    // Image
 
     EXRImage image;
     InitEXRImage(&image);
 
     image.num_channels = 3;
 
+    const size_t       pixelCount = size_t(width) * height;
     std::vector<float> images[3];
-    images[0].resize(width * height);
-    images[1].resize(width * height);
-    images[2].resize(width * height);
+    images[0].resize(pixelCount);
+    images[1].resize(pixelCount);
+    images[2].resize(pixelCount);
 
     // Split RGBRGBRGB... into R, G and B layer
-    for (int i = 0; i < width * height; i++) {
+    for (size_t i = 0; i < pixelCount; i++) {
         images[0][i] = rgb[3 * i + 0];
         images[1][i] = rgb[3 * i + 1];
         images[2][i] = rgb[3 * i + 2];
     }
 
-    float* image_ptr[3];
-    image_ptr[0] = &(images[2].at(0)); // B
-    image_ptr[1] = &(images[1].at(0)); // G
-    image_ptr[2] = &(images[0].at(0)); // R
+    float* imagePtr[3];
+    imagePtr[0] = &(images[2].at(0)); // B
+    imagePtr[1] = &(images[1].at(0)); // G
+    imagePtr[2] = &(images[0].at(0)); // R
 
-    image.images = (unsigned char**)image_ptr;
+    image.images = (unsigned char**)imagePtr;
     image.width  = width;
     image.height = height;
 
-    // WRITE
+    // Write
 
     const char* err = nullptr;
     int         ret = SaveEXRImageToFile(&image, &header, outfilename.c_str(), &err);
     if (ret != TINYEXR_SUCCESS) {
-        printf("Saving EXR failed: %s\n", err);
-        FreeEXRErrorMessage(err); // frees buffer for an error message
+        const std::string message(std::string("Saving EXR failed - ") + std::string(err));
+        FreeEXRErrorMessage(err); // Frees buffer for an error message
+        throw std::exception(message.c_str());
     } else {
         free(header.channels);
         free(header.pixel_types);
@@ -278,11 +295,14 @@ void saveEXR(const float* rgb, const int width, const int height, const std::str
     }
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Main
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]) {
+    // Print help if user asked for it and quit.
     if (cmdOptionExists(argv, argv + argc, "-h") || cmdOptionExists(argv, argv + argc, "--help")) {
         std::cout << "Usage: " << argv[0] << "\n";
         std::cout << "Optional arguments:\n";
@@ -299,106 +319,85 @@ int main(int argc, char* argv[]) {
                      "kilometers\n";
         return 1;
     }
-    const double      albedo   = getDoubleCmdOption(argv, argv + argc, "-alb", 0.5);
-    const double      altitude = getDoubleCmdOption(argv, argv + argc, "-alt", 0.0);
-    const double      azimuth  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
-    const std::string datasetFile =
-        getStringCmdOption(argv, argv + argc, "-dat", "PragueSkyModelDataset.dat");
+
+    // Read all command-line options.
+    const double      albedo     = getDoubleCmdOption(argv, argv + argc, "-alb", 0.5);
+    const double      altitude   = getDoubleCmdOption(argv, argv + argc, "-alt", 0.0);
+    const double      azimuth    = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
+    const std::string dataset    = getStringCmdOption(argv, argv + argc, "-dat", "PragueSkyModelDataset.dat");
     const double      elevation  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-ele", 0.0));
     const int         mode       = getIntCmdOption(argv, argv + argc, "-mod", 0);
     const std::string outputFile = getStringCmdOption(argv, argv + argc, "-out", "test.exr");
     const int         resolution = getIntCmdOption(argv, argv + argc, "-res", 512);
     const double      visibility = getDoubleCmdOption(argv, argv + argc, "-vis", 59.4);
-
+    
+    // We are viewing the sky from 'altitude' meters above the origin.
     const Vector3 viewPoint = Vector3(0.0, 0.0, altitude);
 
-    Spectrum spectrum;
-    float*   result = new float[resolution * resolution * 3];
+    // Buffer for saving the resulting image to an EXR file.
+    std::vector<float> result;
+    result.resize(size_t(resolution) * resolution * 3);
 
+    // The model can throw exceptions, therefore try.
     try {
-        PragueSkyModel skyModel = PragueSkyModel(datasetFile);
+        // Initialize the model with the given dataset file.
+        PragueSkyModel skyModel = PragueSkyModel(dataset);
 
         for (int x = 0; x < resolution; x++) {
             for (int y = 0; y < resolution; y++) {
+                // For each pixel of the rendered image get the corresponding direction in fisheye projection.
                 const Vector3 viewDir = pixelToDirection(x, y, resolution);
+
+                // If the pixel lies outside the upper hemisphere, the direction will be zero. Such a pixel is
+                // painted black.
                 if (viewDir.isZero()) {
-                    result[(x * resolution + y) * 3] = 0.0;
-                    result[(x * resolution + y) * 3 + 1] = 0.0;
-                    result[(x * resolution + y) * 3 + 2] = 0.0;
+                    result[(size_t(x) * resolution + y) * 3]     = 0.0;
+                    result[(size_t(x) * resolution + y) * 3 + 1] = 0.0;
+                    result[(size_t(x) * resolution + y) * 3 + 2] = 0.0;
                     continue;
                 }
 
-                double solarElevationAtViewpoint, altitudeOfViewpoint, theta, gamma, shadow, zero;
-                skyModel.computeAngles(viewPoint,
-                    viewDir,
-                    elevation,
-                    azimuth,
-                    &solarElevationAtViewpoint,
-                    &altitudeOfViewpoint,
-                    &theta,
-                    &gamma,
-                    &shadow,
-                    &zero);
+                // Get internal model parameters for the desired configuration.
+                const PragueSkyModel::Parameters params =
+                    skyModel.computeParameters(viewPoint, viewDir, elevation, azimuth, visibility, albedo);
 
-                for (int wl = 0; wl < 11; wl++) {
+                // Based on the selected mode compute spectral sky radiance, sun radiance, polarisation or
+                // transmittance.
+                Spectrum spectrum;
+                for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
                     switch (mode) {
                     case 1:
-                        spectrum[wl] = skyModel.sunRadiance(theta,
-                            gamma,
-                            shadow,
-                            zero,
-                            solarElevationAtViewpoint,
-                            altitudeOfViewpoint,
-                            visibility,
-                            albedo,
-                            wavelengths[wl]);
+                        spectrum[wl] = skyModel.sunRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                         break;
                     case 2:
-                        spectrum[wl] = std::abs(skyModel.polarisation(theta,
-                            gamma,
-                            solarElevationAtViewpoint,
-                            altitudeOfViewpoint,
-                            visibility,
-                            albedo,
-                            wavelengths[wl]));
+                        spectrum[wl] = std::abs(skyModel.polarisation(params, SPECTRUM_WAVELENGTHS[wl]));
                         break;
                     case 3:
-                        spectrum[wl] = skyModel.transmittance(theta,
-                            altitudeOfViewpoint,
-                            visibility,
-                            wavelengths[wl],
-                            std::numeric_limits<double>::max());
+                        spectrum[wl] = skyModel.transmittance(params,
+                                                              SPECTRUM_WAVELENGTHS[wl],
+                                                              std::numeric_limits<double>::max());
                         break;
                     default:
-                        spectrum[wl] = skyModel.skyRadiance(theta,
-                            gamma,
-                            shadow,
-                            zero,
-                            solarElevationAtViewpoint,
-                            altitudeOfViewpoint,
-                            visibility,
-                            albedo,
-                            wavelengths[wl]);
+                        spectrum[wl] = skyModel.skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                         break;
                     }
                 }
 
+                // Convert the spectral quantity to sRGB and store it in the result buffer.
                 const Vector3 rgb = spectrumToRGB(spectrum);
-                result[(x * resolution + y) * 3] = rgb.x;
-                result[(x * resolution + y) * 3 + 1] = rgb.y;
-                result[(x * resolution + y) * 3 + 2] = rgb.z;
+                result[(size_t(x) * resolution + y) * 3] = rgb.x;
+                result[(size_t(x) * resolution + y) * 3 + 1] = rgb.y;
+                result[(size_t(x) * resolution + y) * 3 + 2] = rgb.z;
             }
         }
 
+        // Save the result buffer into an EXR file.
         saveEXR(result, resolution, resolution, outputFile);
-		delete[] result;
 
 		std::cout << "Done\n";
 		return 0;
 	}
 	catch (std::exception& e) {
-        delete[] result;
-
 		std::cout << "Error: " << e.what() << "\n";
         return 1;
 	}
