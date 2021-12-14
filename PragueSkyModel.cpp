@@ -1,15 +1,8 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include "PragueSkyModel.h"
-
-#ifndef ALLOC
-#    define ALLOC(_struct) ((_struct*)malloc(sizeof(_struct)))
-#endif
-
-#ifndef ALLOC_ARRAY
-#    define ALLOC_ARRAY(_struct, _number) ((_struct*)malloc(sizeof(_struct) * (_number)))
-#endif
 
 ///////////////////////////////////////////////
 // Constants
@@ -19,6 +12,7 @@ constexpr double PI              = 3.141592653589793;
 constexpr double PLANET_RADIUS   = 6378000.0;
 constexpr double SAFETY_ALTITUDE = 50.0;
 constexpr double SUN_RADIUS      = 0.004654793; // = 0.2667 degrees
+constexpr double DIST_TO_EDGE = 1571524.413613; // Maximum distance to the edge of the atmosphere in the transmittance model
 constexpr double SUN_RAD_START   = 310;
 constexpr double SUN_RAD_STEP    = 1;
 constexpr double SUN_RAD_TABLE[] = {
@@ -94,7 +88,7 @@ double doubleFromHalf(const uint16 half) {
             ;
         hi += uint32(abs) << 10;
     }
-    uint64 dbits = uint64(hi) << 32;
+    const uint64 dbits = uint64(hi) << 32;
     double out;
     std::memcpy(&out, &dbits, sizeof(double));
     return out;
@@ -125,26 +119,25 @@ double lerp(const double from, const double to, const double factor) {
 }
 
 double nonlinlerp(const double a, const double b, const double w, const double p) {
-    double c1 = pow(a, p);
-    double c2 = pow(b, p);
+    const double c1 = pow(a, p);
+    const double c2 = pow(b, p);
     return ((pow(w, p) - c1) / (c2 - c1));
 }
 
 double clamp01(const double x) {
-    return (x < 0 ? 0 : (x > 1.0 ? 1.0 : x));
+    return (x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x));
 }
 
 ///////////////////////////////////////////////
 // Data reading
 ///////////////////////////////////////////////
 
-int unpackCoefsFromHalf(const int             nbreaks,
-                        const double*         breaks,
-                        const unsigned short* values,
-                        double*               coefs,
-                        const int             offset,
-                        const double          scale) {
-    for (int i = 0; i < nbreaks - 1; ++i) {
+int unpackCoefsFromHalf(const std::vector<double>& breaks,
+                        const std::vector<uint16>& values,
+                        std::vector<double>&       coefs,
+                        const int                  offset,
+                        const double               scale) {
+    for (int i = 0; i < breaks.size() - 1; ++i) {
         const double val1 = doubleFromHalf(values[i + 1]) / scale;
         const double val2 = doubleFromHalf(values[i]) / scale;
         const double diff = val1 - val2;
@@ -152,19 +145,18 @@ int unpackCoefsFromHalf(const int             nbreaks,
         coefs[offset + 2 * i]     = diff / (breaks[i + 1] - breaks[i]);
         coefs[offset + 2 * i + 1] = val2;
     }
-    return 2 * nbreaks - 2;
+    return 2 * breaks.size() - 2;
 }
 
-int unpackCoefsFromFloat(const int     nbreaks,
-                         const double* breaks,
-                         const float*  values,
-                         double*       coefs,
-                         const int     offset) {
-    for (int i = 0; i < nbreaks - 1; ++i) {
-        coefs[offset + 2 * i]     = ((double)values[i + 1] - (double)values[i]) / (breaks[i + 1] - breaks[i]);
-        coefs[offset + 2 * i + 1] = (double)values[i];
+int unpackCoefsFromFloat(const std::vector<double>& breaks,
+                         const std::vector<float>&  values,
+                         std::vector<double>&       coefs,
+                         const int                  offset) {
+    for (int i = 0; i < breaks.size() - 1; ++i) {
+        coefs[offset + 2 * i]     = (double(values[i + 1]) - double(values[i])) / (breaks[i + 1] - breaks[i]);
+        coefs[offset + 2 * i + 1] = double(values[i]);
     }
-    return 2 * nbreaks - 2;
+    return 2 * breaks.size() - 2;
 }
 
 void printErrorAndExit(const char* message) {
@@ -178,171 +170,155 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     // Read metadata
 
     // Structure of the metadata part of the data file:
-    // turbidity_count   (1 * int),  turbidities (turbidity_count * double),
-    // albedo_count      (1 * int),  albedos    (albedo_count * double),
-    // altitude_count    (1 * int),  altitudes  (altitude_count * double),
-    // elevation_count   (1 * int),  elevations (elevation_count * double),
-    // channels          (1 * int),  channel_start  (1 * double), channel_width (1
-    // * double), tensor_components (1 * int), sun_nbreaks       (1 * int),
-    // sun_breaks     (sun_nbreaks * double), zenith_nbreaks    (1 * int),
-    // zenith_breaks  (zenith_nbreaks * double), emph_nbreaks      (1 * int),
-    // emph_breaks    (emph_nbreaks * double)
+    // visibilityCount   (1 * int),  visibilities (visibilityCount * double),
+    // albedoCount      (1 * int),  albedos    (albedoCount * double),
+    // altitudeCount    (1 * int),  altitudes  (altitudeCount * double),
+    // elevationCount   (1 * int),  elevations (elevationCount * double),
+    // channels          (1 * int),  channelStart  (1 * double), channelWidth (1
+    // * double), rankRad (1 * int), sunBreaksCountRad       (1 * int),
+    // sunBreaksRad     (sunBreaksCountRad * double), zenithBreaksCountRad    (1 * int),
+    // zenithBreaksRad  (zenithBreaksCountRad * double), emphBreaksCountRad      (1 * int),
+    // emphBreaksRad    (emphBreaksCountRad * double)
 
     int valsRead;
 
-    int turbidity_count = 0;
-    valsRead            = fread(&turbidity_count, sizeof(int), 1, handle);
-    if (valsRead != 1 || turbidity_count < 1)
-        printErrorAndExit("Error reading sky model data: turbidity_count");
+    int turbidityCount = 0;
+    valsRead            = fread(&turbidityCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || turbidityCount < 1)
+        printErrorAndExit("Error reading sky model data: turbidityCountRad");
 
-    turbidities.resize(turbidity_count);
-    valsRead = fread(turbidities.data(), sizeof(double), turbidity_count, handle);
-    if (valsRead != turbidity_count)
-        printErrorAndExit("Error reading sky model data: turbidities");
+    visibilitiesRad.resize(turbidityCount);
+    valsRead = fread(visibilitiesRad.data(), sizeof(double), turbidityCount, handle);
+    if (valsRead != turbidityCount)
+        printErrorAndExit("Error reading sky model data: visibilitesRad");
 
-    int albedo_count = 0;
-    valsRead = fread(&albedo_count, sizeof(int), 1, handle);
-    if (valsRead != 1 || albedo_count < 1)
-        printErrorAndExit("Error reading sky model data: albedo_count");
+    int albedoCount = 0;
+    valsRead = fread(&albedoCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || albedoCount < 1)
+        printErrorAndExit("Error reading sky model data: albedoCountRad");
 
-    albedos.resize(albedo_count);
-    valsRead    = fread(albedos.data(), sizeof(double), albedo_count, handle);
-    if (valsRead != albedo_count)
-        printErrorAndExit("Error reading sky model data: albedos");
+    albedosRad.resize(albedoCount);
+    valsRead    = fread(albedosRad.data(), sizeof(double), albedoCount, handle);
+    if (valsRead != albedoCount)
+        printErrorAndExit("Error reading sky model data: albedosRad");
 
-    int altitude_count = 0;
-    valsRead = fread(&altitude_count, sizeof(int), 1, handle);
-    if (valsRead != 1 || altitude_count < 1)
-        printErrorAndExit("Error reading sky model data: altitude_count");
+    int altitudeCount = 0;
+    valsRead = fread(&altitudeCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || altitudeCount < 1)
+        printErrorAndExit("Error reading sky model data: altitudeCountRad");
 
-    altitudes.resize(altitude_count);
-    valsRead      = fread(altitudes.data(), sizeof(double), altitude_count, handle);
-    if (valsRead != altitude_count)
-        printErrorAndExit("Error reading sky model data: altitudes");
+    altitudesRad.resize(altitudeCount);
+    valsRead      = fread(altitudesRad.data(), sizeof(double), altitudeCount, handle);
+    if (valsRead != altitudeCount)
+        printErrorAndExit("Error reading sky model data: altitudesRad");
 
-    int elevation_count = 0;
-    valsRead = fread(&elevation_count, sizeof(int), 1, handle);
-    if (valsRead != 1 || elevation_count < 1)
-        printErrorAndExit("Error reading sky model data: elevation_count");
+    int elevationCount = 0;
+    valsRead = fread(&elevationCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || elevationCount < 1)
+        printErrorAndExit("Error reading sky model data: elevationCountRad");
 
-    elevations.resize(elevation_count);
-    valsRead       = fread(elevations.data(), sizeof(double), elevation_count, handle);
-    if (valsRead != elevation_count)
-        printErrorAndExit("Error reading sky model data: elevations");
+    elevationsRad.resize(elevationCount);
+    valsRead       = fread(elevationsRad.data(), sizeof(double), elevationCount, handle);
+    if (valsRead != elevationCount)
+        printErrorAndExit("Error reading sky model data: elevationsRad");
 
     valsRead = fread(&channels, sizeof(int), 1, handle);
     if (valsRead != 1 || channels < 1)
         printErrorAndExit("Error reading sky model data: channels");
 
-    valsRead = fread(&channel_start, sizeof(double), 1, handle);
-    if (valsRead != 1 || channel_start < 0)
-        printErrorAndExit("Error reading sky model data: channel_start");
+    valsRead = fread(&channelStart, sizeof(double), 1, handle);
+    if (valsRead != 1 || channelStart < 0)
+        printErrorAndExit("Error reading sky model data: channelStart");
 
-    valsRead = fread(&channel_width, sizeof(double), 1, handle);
-    if (valsRead != 1 || channel_width <= 0)
-        printErrorAndExit("Error reading sky model data: channel_width");
+    valsRead = fread(&channelWidth, sizeof(double), 1, handle);
+    if (valsRead != 1 || channelWidth <= 0)
+        printErrorAndExit("Error reading sky model data: channelWidth");
 
-    valsRead = fread(&tensor_components, sizeof(int), 1, handle);
-    if (valsRead != 1 || tensor_components < 1)
-        printErrorAndExit("Error reading sky model data: tensor_components");
+    valsRead = fread(&rankRad, sizeof(int), 1, handle);
+    if (valsRead != 1 || rankRad < 1)
+        printErrorAndExit("Error reading sky model data: rankRad");
 
-    valsRead = fread(&sun_nbreaks, sizeof(int), 1, handle);
-    if (valsRead != 1 || sun_nbreaks < 2)
-        printErrorAndExit("Error reading sky model data: sun_nbreaks");
+    int sunBreaksCount = 0;
+    valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || sunBreaksCount < 2)
+        printErrorAndExit("Error reading sky model data: sunBreaksCountRad");
 
-    sun_breaks = ALLOC_ARRAY(double, sun_nbreaks);
-    valsRead   = fread(sun_breaks, sizeof(double), sun_nbreaks, handle);
-    if (valsRead != sun_nbreaks)
-        printErrorAndExit("Error reading sky model data: sun_breaks");
+    sunBreaksRad.resize(sunBreaksCount);
+    valsRead   = fread(sunBreaksRad.data(), sizeof(double), sunBreaksCount, handle);
+    if (valsRead != sunBreaksCount)
+        printErrorAndExit("Error reading sky model data: sunBreaksRad");
 
-    valsRead = fread(&zenith_nbreaks, sizeof(int), 1, handle);
-    if (valsRead != 1 || zenith_nbreaks < 2)
-        printErrorAndExit("Error reading sky model data: zenith_nbreaks");
+    int zenitBreaksCount = 0;
+    valsRead = fread(&zenitBreaksCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || zenitBreaksCount < 2)
+        printErrorAndExit("Error reading sky model data: zenitBreaksCountRad");
 
-    zenith_breaks = ALLOC_ARRAY(double, zenith_nbreaks);
-    valsRead      = fread(zenith_breaks, sizeof(double), zenith_nbreaks, handle);
-    if (valsRead != zenith_nbreaks)
-        printErrorAndExit("Error reading sky model data: zenith_breaks");
+    zenithBreaksRad.resize(zenitBreaksCount);
+    valsRead      = fread(zenithBreaksRad.data(), sizeof(double), zenitBreaksCount, handle);
+    if (valsRead != zenitBreaksCount)
+        printErrorAndExit("Error reading sky model data: zenithBreaksRad");
 
-    valsRead = fread(&emph_nbreaks, sizeof(int), 1, handle);
-    if (valsRead != 1 || emph_nbreaks < 2)
-        printErrorAndExit("Error reading sky model data: emph_nbreaks");
+    int emphBreaksCount = 0;
+    valsRead = fread(&emphBreaksCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || emphBreaksCount < 2)
+        printErrorAndExit("Error reading sky model data: emphBreaksCountRad");
 
-    emph_breaks = ALLOC_ARRAY(double, emph_nbreaks);
-    valsRead    = fread(emph_breaks, sizeof(double), emph_nbreaks, handle);
-    if (valsRead != emph_nbreaks)
-        printErrorAndExit("Error reading sky model data: emph_breaks");
+    emphBreaksRad.resize(emphBreaksCount);
+    valsRead    = fread(emphBreaksRad.data(), sizeof(double), emphBreaksCount, handle);
+    if (valsRead != emphBreaksCount)
+        printErrorAndExit("Error reading sky model data: emphBreaksRad");
 
     // Calculate offsets and strides
 
-    sun_offset = 0;
-    sun_stride = 2 * sun_nbreaks - 2 + 2 * zenith_nbreaks - 2;
+    sunOffsetRad = 0;
+    sunStrideRad = 2 * sunBreaksRad.size() - 2 + 2 * zenithBreaksRad.size() - 2;
 
-    zenith_offset = sun_offset + 2 * sun_nbreaks - 2;
-    zenith_stride = sun_stride;
+    zenithOffsetRad = sunOffsetRad + 2 * sunBreaksRad.size() - 2;
+    zenithStrideRad = sunStrideRad;
 
-    emph_offset = sun_offset + tensor_components * sun_stride;
+    emphOffsetRad = sunOffsetRad + rankRad * sunStrideRad;
 
-    total_coefs_single_config = emph_offset + 2 * emph_nbreaks - 2; // this is for one specific configuration
-    total_configs             = channels * elevations.size() * altitudes.size() * albedos.size() * turbidities.size();
-    total_coefs_all_configs   = total_coefs_single_config * total_configs;
+    totalCoefsSingleConfigRad = emphOffsetRad + 2 * emphBreaksRad.size() - 2; // this is for one specific configuration
+    totalConfigsRad = channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibilitiesRad.size();
+    totalCoefsAllConfigsRad = totalCoefsSingleConfigRad * totalConfigsRad;
 
     // Read data
 
     // Structure of the data part of the data file:
-    // [[[[[[ sun_coefs (sun_nbreaks * half), zenith_scale (1 * double),
-    // zenith_coefs (zenith_nbreaks * half) ] * tensor_components, emph_coefs
-    // (emph_nbreaks * half) ]
-    //   * channels ] * elevation_count ] * altitude_count ] * albedo_count ] * turbidity_count
+    // [[[[[[ sunCoefsRad (sunBreaksCountRad * half), zenithScale (1 * double),
+    // zenithCoefsRad (zenithBreaksCountRad * half) ] * rankRad, emphCoefsRad
+    // (emphBreaksCountRad * half) ]
+    //   * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
     int offset       = 0;
-    radiance_dataset = ALLOC_ARRAY(double, total_coefs_all_configs);
+    datasetRad.resize(totalCoefsAllConfigsRad);
 
-    unsigned short* radiance_temp =
-        ALLOC_ARRAY(unsigned short, std::max(sun_nbreaks, std::max(zenith_nbreaks, emph_nbreaks)));
+    std::vector<uint16> radianceTemp;
+    radianceTemp.resize(std::max(sunBreaksRad.size(), std::max(zenithBreaksRad.size(), emphBreaksRad.size())));
 
-    for (int con = 0; con < total_configs; ++con) {
-        for (int tc = 0; tc < tensor_components; ++tc) {
-            const double sun_scale = 1.0;
-            valsRead               = fread(radiance_temp, sizeof(unsigned short), sun_nbreaks, handle);
-            if (valsRead != sun_nbreaks)
-                printErrorAndExit("Error reading sky model data: sun_coefs");
-            offset += unpackCoefsFromHalf(sun_nbreaks,
-                                          sun_breaks,
-                                          radiance_temp,
-                                          radiance_dataset,
-                                          offset,
-                                          sun_scale);
+    for (int con = 0; con < totalConfigsRad; ++con) {
+        for (int tc = 0; tc < rankRad; ++tc) {
+            valsRead = fread(radianceTemp.data(), sizeof(unsigned short), sunBreaksRad.size(), handle);
+            if (valsRead != sunBreaksRad.size())
+                printErrorAndExit("Error reading sky model data: sunCoefsRad");
+            offset += unpackCoefsFromHalf(sunBreaksRad, radianceTemp, datasetRad, offset, 1.0);
 
-            double zenith_scale;
-            valsRead = fread(&zenith_scale, sizeof(double), 1, handle);
+            double zenithScale;
+            valsRead = fread(&zenithScale, sizeof(double), 1, handle);
             if (valsRead != 1)
-                printErrorAndExit("Error reading sky model data: zenith_scale");
+                printErrorAndExit("Error reading sky model data: zenithScaleRad");
 
-            valsRead = fread(radiance_temp, sizeof(unsigned short), zenith_nbreaks, handle);
-            if (valsRead != zenith_nbreaks)
-                printErrorAndExit("Error reading sky model data: zenith_coefs");
-            offset += unpackCoefsFromHalf(zenith_nbreaks,
-                                          zenith_breaks,
-                                          radiance_temp,
-                                          radiance_dataset,
-                                          offset,
-                                          zenith_scale);
+            valsRead = fread(radianceTemp.data(), sizeof(unsigned short), zenithBreaksRad.size(), handle);
+            if (valsRead != zenithBreaksRad.size())
+                printErrorAndExit("Error reading sky model data: zenithCoefsRad");
+            offset += unpackCoefsFromHalf(zenithBreaksRad, radianceTemp, datasetRad, offset, zenithScale);
         }
 
-        const double emph_scale = 1.0;
-        valsRead                = fread(radiance_temp, sizeof(unsigned short), emph_nbreaks, handle);
-        if (valsRead != emph_nbreaks)
-            printErrorAndExit("Error reading sky model data: emph_coefs");
-        offset += unpackCoefsFromHalf(emph_nbreaks,
-                                      emph_breaks,
-                                      radiance_temp,
-                                      radiance_dataset,
-                                      offset,
-                                      emph_scale);
+        valsRead = fread(radianceTemp.data(), sizeof(unsigned short), emphBreaksRad.size(), handle);
+        if (valsRead != emphBreaksRad.size())
+            printErrorAndExit("Error reading sky model data: emphCoefsRad");
+        offset += unpackCoefsFromHalf(emphBreaksRad, radianceTemp, datasetRad, offset, 1.0);
     }
-
-    free(radiance_temp);
 }
 
 void PragueSkyModel::readTransmittance(FILE* handle) {
@@ -350,136 +326,135 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
 
     int valsRead;
 
-    valsRead = fread(&trans_n_d, sizeof(int), 1, handle);
-    if (valsRead != 1 || trans_n_d < 1)
-        printErrorAndExit("Error reading sky model data: trans_n_d");
+    valsRead = fread(&dDim, sizeof(int), 1, handle);
+    if (valsRead != 1 || dDim < 1)
+        printErrorAndExit("Error reading sky model data: dDim");
 
-    valsRead = fread(&trans_n_a, sizeof(int), 1, handle);
-    if (valsRead != 1 || trans_n_a < 1)
-        printErrorAndExit("Error reading sky model data: trans_n_a");
+    valsRead = fread(&aDim, sizeof(int), 1, handle);
+    if (valsRead != 1 || aDim < 1)
+        printErrorAndExit("Error reading sky model data: aDim");
 
-    valsRead = fread(&trans_turbidities, sizeof(int), 1, handle);
-    if (valsRead != 1 || trans_turbidities < 1)
-        printErrorAndExit("Error reading sky model data: trans_turbidities");
+    int visibilitiesCount = 0;
+    valsRead = fread(&visibilitiesCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || visibilitiesCount < 1)
+        printErrorAndExit("Error reading sky model data: visibilitiesCountTrans");
 
-    valsRead = fread(&trans_altitudes, sizeof(int), 1, handle);
-    if (valsRead != 1 || trans_altitudes < 1)
-        printErrorAndExit("Error reading sky model data: trans_altitudes");
+    int altitudesCount = 0;
+    valsRead = fread(&altitudesCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || altitudesCount < 1)
+        printErrorAndExit("Error reading sky model data: altitudesCountTrans");
 
-    valsRead = fread(&trans_rank, sizeof(int), 1, handle);
-    if (valsRead != 1 || trans_rank < 1)
-        printErrorAndExit("Error reading sky model data: trans_rank");
+    valsRead = fread(&rankTrans, sizeof(int), 1, handle);
+    if (valsRead != 1 || rankTrans < 1)
+        printErrorAndExit("Error reading sky model data: rankTrans");
 
-    transmission_altitudes = ALLOC_ARRAY(float, trans_altitudes);
-    valsRead               = fread(transmission_altitudes, sizeof(float), trans_altitudes, handle);
-    if (valsRead != trans_altitudes)
-        printErrorAndExit("Error reading sky model data: transmission_altitudes");
+    altitudesTrans.resize(altitudesCount);
+    valsRead               = fread(altitudesTrans.data(), sizeof(float), altitudesCount, handle);
+    if (valsRead != altitudesCount)
+        printErrorAndExit("Error reading sky model data: altitudesTrans");
 
-    transmission_turbities = ALLOC_ARRAY(float, trans_turbidities);
-    valsRead               = fread(transmission_turbities, sizeof(float), trans_turbidities, handle);
-    if (valsRead != trans_turbidities)
-        printErrorAndExit("Error reading sky model data: transmission_turbities");
+    visibilitiesTrans.resize(visibilitiesCount);
+    valsRead               = fread(visibilitiesTrans.data(), sizeof(float), visibilitiesCount, handle);
+    if (valsRead != visibilitiesCount)
+        printErrorAndExit("Error reading sky model data: visibilitiesTrans");
 
-    const int total_coefs_U = trans_n_d * trans_n_a * trans_rank * trans_altitudes;
-    const int total_coefs_V = trans_turbidities * trans_rank * 11 * trans_altitudes;
+    const int totalCoefsU = dDim * aDim * rankTrans * altitudesTrans.size();
+    const int totalCoefsV = visibilitiesTrans.size() * rankTrans * 11 * altitudesTrans.size();
 
     // Read data
 
-    transmission_dataset_U = ALLOC_ARRAY(float, total_coefs_U);
-    valsRead               = fread(transmission_dataset_U, sizeof(float), total_coefs_U, handle);
-    if (valsRead != total_coefs_U)
-        printErrorAndExit("Error reading sky model data: transmission_dataset_U");
+    datasetTransU.resize(totalCoefsU);
+    valsRead               = fread(datasetTransU.data(), sizeof(float), totalCoefsU, handle);
+    if (valsRead != totalCoefsU)
+        printErrorAndExit("Error reading sky model data: datasetTransU");
 
-    transmission_dataset_V = ALLOC_ARRAY(float, total_coefs_V);
-    valsRead               = fread(transmission_dataset_V, sizeof(float), total_coefs_V, handle);
-    if (valsRead != total_coefs_V)
-        printErrorAndExit("Error reading sky model data: transmission_dataset_V");
+    datasetTransV.resize(totalCoefsV);
+    valsRead               = fread(datasetTransV.data(), sizeof(float), totalCoefsV, handle);
+    if (valsRead != totalCoefsV)
+        printErrorAndExit("Error reading sky model data: datasetTransV");
 }
 
 void PragueSkyModel::readPolarisation(FILE* handle) {
     // Read metadata
 
     // Structure of the metadata part of the data file:
-    // tensor_components_pol (1 * int),
-    // sun_nbreaks_pol       (1 * int),  sun_breaks_pol     (sun_nbreaks_pol *
-    // double), zenith_nbreaks_pol    (1 * int),  zenith_breaks_pol
-    // (zenith_nbreaks_pol * double), emph_nbreaks_pol      (1 * int),
-    // emph_breaks_pol    (emph_nbreaks_pol * double)
+    // rankPol (1 * int), sunBreaksCountPol (1 * int), sunBreaksPol (sunBreaksCountPol * double), zenithBreaksCountPol (1
+    // * int), zenithBreaksPol (zenithBreaksCountPol * double), empBreaksCountPol (1 * int), emphBreaksPol (empBreaksCountPol
+    // * double)
 
     int valsRead;
 
-    valsRead = fread(&tensor_components_pol, sizeof(int), 1, handle);
+    valsRead = fread(&rankPol, sizeof(int), 1, handle);
     if (valsRead != 1) {
         // Polarisation dataset not present
-        tensor_components_pol = 0;
-        printErrorAndExit("No polarisation dataset available!\n");
+        rankPol = 0;
         return;
     }
 
-    valsRead = fread(&sun_nbreaks_pol, sizeof(int), 1, handle);
-    if (valsRead != 1 || sun_nbreaks_pol < 1)
-        printErrorAndExit("Error reading sky model data: sun_nbreaks_pol");
+    int sunBreaksCount = 0;
+    valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || sunBreaksCount < 1)
+        printErrorAndExit("Error reading sky model data: sunBreaksCountPol");
 
-    sun_breaks_pol = ALLOC_ARRAY(double, sun_nbreaks_pol);
-    valsRead       = fread(sun_breaks_pol, sizeof(double), sun_nbreaks_pol, handle);
-    if (valsRead != sun_nbreaks_pol)
-        printErrorAndExit("Error reading sky model data: sun_breaks_pol");
+    sunBreaksPol.resize(sunBreaksCount);
+    valsRead       = fread(sunBreaksPol.data(), sizeof(double), sunBreaksCount, handle);
+    if (valsRead != sunBreaksCount)
+        printErrorAndExit("Error reading sky model data: sunBreaksPol");
 
-    valsRead = fread(&zenith_nbreaks_pol, sizeof(int), 1, handle);
-    if (valsRead != 1 || zenith_nbreaks_pol < 1)
-        printErrorAndExit("Error reading sky model data: zenith_nbreaks_pol");
+    int zenithBreaksCount = 0;
+    valsRead = fread(&zenithBreaksCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || zenithBreaksCount < 1)
+        printErrorAndExit("Error reading sky model data: zenithBreaksCountPol");
 
-    zenith_breaks_pol = ALLOC_ARRAY(double, zenith_nbreaks_pol);
-    valsRead          = fread(zenith_breaks_pol, sizeof(double), zenith_nbreaks_pol, handle);
-    if (valsRead != zenith_nbreaks_pol)
-        printErrorAndExit("Error reading sky model data: zenith_breaks_pol");
+    zenithBreaksPol.resize(zenithBreaksCount);
+    valsRead          = fread(zenithBreaksPol.data(), sizeof(double), zenithBreaksCount, handle);
+    if (valsRead != zenithBreaksCount)
+        printErrorAndExit("Error reading sky model data: zenithBreaksPol");
 
     // Calculate offsets and strides
 
-    sun_offset_pol = 0;
-    sun_stride_pol = 2 * sun_nbreaks_pol - 2 + 2 * zenith_nbreaks_pol - 2;
+    sunOffsetPol = 0;
+    sunStridePol = 2 * sunBreaksPol.size() - 2 + 2 * zenithBreaksPol.size() - 2;
 
-    zenith_offset_pol = sun_offset_pol + 2 * sun_nbreaks_pol - 2;
-    zenith_stride_pol = sun_stride_pol;
+    zenithOffsetPol = sunOffsetPol + 2 * sunBreaksPol.size() - 2;
+    zenithStridePol = sunStridePol;
 
-    total_coefs_single_config_pol =
-        sun_offset_pol + tensor_components_pol * sun_stride_pol; // this is for one specific configuration
-    total_coefs_all_configs_pol = total_coefs_single_config_pol * total_configs;
+    totalCoefsSingleConfigPol =
+        sunOffsetPol + rankPol * sunStridePol; // this is for one specific configuration
+    totalCoefsAllConfigsPol = totalCoefsSingleConfigPol * totalConfigsRad;
 
     // Read data
 
     // Structure of the data part of the data file:
-    // [[[[[[ sun_coefs_pol (sun_nbreaks_pol * float), zenith_coefs_pol
-    // (zenith_nbreaks_pol * float) ] * tensor_components_pol]
-    //   * channels ] * elevation_count ] * altitude_count ] * albedo_count ] * turbidity_count
+    // [[[[[[ sunCoefsPol (sunBreaksCountPol * float), zenithCoefsPol
+    // (zenithBreaksCountPol * float) ] * rankPol]
+    //   * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
     int offset               = 0;
-    polarisation_dataset     = ALLOC_ARRAY(double, total_coefs_all_configs_pol);
-    float* polarisation_temp = ALLOC_ARRAY(float, std::max(sun_nbreaks_pol, zenith_nbreaks_pol));
+    datasetPol.resize(totalCoefsAllConfigsPol);
+    
+    std::vector<float> polarisationTemp;
+    polarisationTemp.resize(std::max(sunBreaksPol.size(), zenithBreaksPol.size()));
 
-    for (int con = 0; con < total_configs; ++con) {
-        for (int tc = 0; tc < tensor_components_pol; ++tc) {
-            valsRead = fread(polarisation_temp, sizeof(float), sun_nbreaks_pol, handle);
-            if (valsRead != sun_nbreaks_pol)
-                printErrorAndExit("Error reading sky model data: sun_coefs_pol");
-            offset += unpackCoefsFromFloat(sun_nbreaks_pol,
-                                           sun_breaks_pol,
-                                           polarisation_temp,
-                                           polarisation_dataset,
+    for (int con = 0; con < totalConfigsRad; ++con) {
+        for (int tc = 0; tc < rankPol; ++tc) {
+            valsRead = fread(polarisationTemp.data(), sizeof(float), sunBreaksPol.size(), handle);
+            if (valsRead != sunBreaksPol.size())
+                printErrorAndExit("Error reading sky model data: sunCoefsPol");
+            offset += unpackCoefsFromFloat(sunBreaksPol,
+                                           polarisationTemp,
+                                           datasetPol,
                                            offset);
 
-            valsRead = fread(polarisation_temp, sizeof(float), zenith_nbreaks_pol, handle);
-            if (valsRead != zenith_nbreaks_pol)
-                printErrorAndExit("Error reading sky model data: zenith_coefs_pol");
-            offset += unpackCoefsFromFloat(zenith_nbreaks_pol,
-                                           zenith_breaks_pol,
-                                           polarisation_temp,
-                                           polarisation_dataset,
+            valsRead = fread(polarisationTemp.data(), sizeof(float), zenithBreaksPol.size(), handle);
+            if (valsRead != zenithBreaksPol.size())
+                printErrorAndExit("Error reading sky model data: zenithCoefsPol");
+            offset += unpackCoefsFromFloat(zenithBreaksPol,
+                                           polarisationTemp,
+                                           datasetPol,
                                            offset);
         }
     }
-
-    free(polarisation_temp);
 }
 
 ///////////////////////////////////////////////
@@ -495,24 +470,6 @@ PragueSkyModel::PragueSkyModel(const char* filename) {
         fclose(handle);
     } else {
         printErrorAndExit("Sky model dataset not found");
-    }
-}
-
-PragueSkyModel::~PragueSkyModel() {
-    free(sun_breaks);
-    free(zenith_breaks);
-    free(emph_breaks);
-    free(radiance_dataset);
-
-    free(transmission_dataset_U);
-    free(transmission_dataset_V);
-    free(transmission_altitudes);
-    free(transmission_turbities);
-
-    if (tensor_components_pol > 0) {
-        free(sun_breaks_pol);
-        free(zenith_breaks_pol);
-        free(polarisation_dataset);
     }
 }
 
@@ -650,24 +607,22 @@ void PragueSkyModel::computeAngles(const Vector3& viewpoint,
 // Parameters
 ///////////////////////////////////////////////
 
-void findInArray(const float* arr, const int arrLength, const double value, int* index, int* inc, double* w) {
-    *inc = 0;
-    if (value <= arr[0]) {
-        *index = 0;
+void findInArray(const std::vector<float>& arr, const double value, int* index, int* inc, double* w) {
+    *inc = 0.0;
+    if (value <= arr.front()) {
+        *index = 0.0;
         *w     = 1.0;
-        return;
-    }
-    if (value >= arr[arrLength - 1]) {
-        *index = arrLength - 1;
-        *w     = 0;
-        return;
-    }
-    for (int i = 1; i < arrLength; i++) {
-        if (value < arr[i]) {
-            *index = i - 1;
-            *inc   = 1;
-            *w     = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
-            return;
+    } else if (value >= arr.back()) {
+        *index = arr.size() - 1;
+        *w     = 0.0;
+    } else {
+        for (int i = 1; i < arr.size(); i++) {
+            if (value < arr[i]) {
+                *index = i - 1;
+                *inc   = 1;
+                *w     = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
+                return;
+            }
         }
     }
 }
@@ -695,71 +650,72 @@ double mapParameter(const double param,  const std::vector<double>& values) {
     return mapped;
 }
 
-int findSegment(const double x, const int nbreaks, const double* breaks) {
+int findSegment(const double x, const std::vector<double>& breaks) {
     int segment = 0;
-    for (segment = 0; segment < nbreaks; ++segment) {
+    for (segment = 0; segment < breaks.size(); ++segment) {
         if (breaks[segment + 1] >= x)
             break;
     }
     return segment;
 }
 
-double evalPP(const double x, const int segment, const double* breaks, const double* coefs) {
+double evalPP(const double x, const int segment, const std::vector<double>& breaks, const std::vector<double>::const_iterator coefs) {
     const double  x0 = x - breaks[segment];
-    const double* sc = coefs + 2 * segment; // segment coefs
-    return sc[0] * x0 + sc[1];
+    const std::vector<double>::const_iterator sc = coefs + 2 * segment; // segment coefs
+    return *sc * x0 + *(sc + 1);
 }
 
-const double* PragueSkyModel::controlParams(const double* dataset,
-                                            const int     total_coefs_single_config,
-                                            const int     elevation,
-                                            const int     altitude,
-                                            const int     turbidity,
-                                            const int     albedo,
-                                            const int     wavelength) const {
-    return dataset + (total_coefs_single_config *
-                      (wavelength + channels * elevation + channels * elevations.size() * altitude +
-                       channels * elevations.size() * altitudes.size() * albedo +
-                       channels * elevations.size() * altitudes.size() * albedos.size() * turbidity));
+std::vector<double>::const_iterator PragueSkyModel::controlParams(const std::vector<double>& dataset,
+                                                                  const int totalCoefsSingleConfig,
+                                                                  const int elevation,
+                                                                  const int altitude,
+                                                                  const int visibility,
+                                                                  const int albedo,
+                                                                  const int wavelength) const {
+    return dataset.cbegin() +
+           (totalCoefsSingleConfig *
+            (wavelength + channels * elevation + channels * elevationsRad.size() * altitude +
+             channels * elevationsRad.size() * altitudesRad.size() * albedo +
+             channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibility));
 }
 
-double PragueSkyModel::reconstruct(const double  gamma,
-                                   const double  alpha,
-                                   const double  zero,
-                                   const int     gamma_segment,
-                                   const int     alpha_segment,
-                                   const int     zero_segment,
-                                   const double* control_params) const {
+double PragueSkyModel::reconstruct(const double                              gamma,
+                                   const double                              alpha,
+                                   const double                              zero,
+                                   const int                                 gammaSegment,
+                                   const int                                 alphaSegment,
+                                   const int                                 zeroSegment,
+                                   const std::vector<double>::const_iterator controlParams) const {
     double res = 0.0;
-    for (int t = 0; t < tensor_components; ++t) {
-        const double sun_val_t =
-            evalPP(gamma, gamma_segment, sun_breaks, control_params + sun_offset + t * sun_stride);
-        const double zenith_val_t =
-            evalPP(alpha, alpha_segment, zenith_breaks, control_params + zenith_offset + t * zenith_stride);
-        res += sun_val_t * zenith_val_t;
+    for (int t = 0; t < rankRad; ++t) {
+        const double sunVal =
+            evalPP(gamma, gammaSegment, sunBreaksRad, controlParams + sunOffsetRad + t * sunStrideRad);
+        const double zenithVal = evalPP(alpha,
+                                        alphaSegment,
+                                        zenithBreaksRad,
+                                        controlParams + zenithOffsetRad + t * zenithStrideRad);
+        res += sunVal * zenithVal;
     }
-    const double emph_val_t = evalPP(zero, zero_segment, emph_breaks, control_params + emph_offset);
-    res *= emph_val_t;
+    const double emphVal = evalPP(zero, zeroSegment, emphBreaksRad, controlParams + emphOffsetRad);
+    res *= emphVal;
 
     return std::max(res, 0.0);
 }
 
-double PragueSkyModel::reconstructPol(const double  gamma,
-                                      const double  alpha,
-                                      const int     gamma_segment,
-                                      const int     alpha_segment,
-                                      const double* control_params) const {
+double PragueSkyModel::reconstructPol(const double                              gamma,
+                                      const double                              alpha,
+                                      const int                                 gammaSegment,
+                                      const int                                 alphaSegment,
+                                      const std::vector<double>::const_iterator controlParams) const {
     double res = 0;
-    for (int t = 0; t < tensor_components_pol; ++t) {
-        const double sun_val_t    = evalPP(gamma,
-                                        gamma_segment,
-                                        sun_breaks_pol,
-                                        control_params + sun_offset_pol + t * sun_stride_pol);
-        const double zenith_val_t = evalPP(alpha,
-                                           alpha_segment,
-                                           zenith_breaks_pol,
-                                           control_params + zenith_offset_pol + t * zenith_stride_pol);
-        res += sun_val_t * zenith_val_t;
+    for (int t = 0; t < rankPol; ++t) {
+        const double sunVal =
+            evalPP(gamma, gammaSegment, sunBreaksPol, controlParams + sunOffsetPol + t * sunStridePol);
+        const double zenithVal = evalPP(alpha,
+                                        alphaSegment,
+                                        zenithBreaksPol,
+                                        controlParams + zenithOffsetPol + t * zenithStridePol);
+        res += sunVal * zenithVal;
     }
     return res;
 }
@@ -770,206 +726,206 @@ double PragueSkyModel::reconstructPol(const double  gamma,
 
 double PragueSkyModel::interpolateElevation(double elevation,
                                             int    altitude,
-                                            int    turbidity,
+                                            int    visibility,
                                             int    albedo,
                                             int    wavelength,
                                             double gamma,
                                             double alpha,
                                             double zero,
-                                            int    gamma_segment,
-                                            int    alpha_segment,
-                                            int    zero_segment) const {
-    const int    elevation_low = (int)elevation;
-    const double factor        = elevation - (double)elevation_low;
+                                            int    gammaSegment,
+                                            int    alphaSegment,
+                                            int    zeroSegment) const {
+    const int    elevationLow = (int)elevation;
+    const double factor       = elevation - (double)elevationLow;
 
-    const double* control_params_low = controlParams(radiance_dataset,
-                                                     total_coefs_single_config,
-                                                     elevation_low,
-                                                     altitude,
-                                                     turbidity,
-                                                     albedo,
-                                                     wavelength);
+    const std::vector<double>::const_iterator controlParamsLow = controlParams(datasetRad,
+                                                                               totalCoefsSingleConfigRad,
+                                                                               elevationLow,
+                                                                               altitude,
+                                                                               visibility,
+                                                                               albedo,
+                                                                               wavelength);
 
-    double res_low =
-        reconstruct(gamma, alpha, zero, gamma_segment, alpha_segment, zero_segment, control_params_low);
+    double resLow =
+        reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsLow);
 
-    if (factor < 1e-6 || elevation_low >= (elevations.size() - 1)) {
-        return res_low;
+    if (factor < 1e-6 || elevationLow >= (elevationsRad.size() - 1)) {
+        return resLow;
     }
 
-    const double* control_params_high = controlParams(radiance_dataset,
-                                                      total_coefs_single_config,
-                                                      elevation_low + 1,
-                                                      altitude,
-                                                      turbidity,
-                                                      albedo,
-                                                      wavelength);
+    const std::vector<double>::const_iterator controlParamsHigh = controlParams(datasetRad,
+                                                                                totalCoefsSingleConfigRad,
+                                                                                elevationLow + 1,
+                                                                                altitude,
+                                                                                visibility,
+                                                                                albedo,
+                                                                                wavelength);
 
-    double res_high =
-        reconstruct(gamma, alpha, zero, gamma_segment, alpha_segment, zero_segment, control_params_high);
+    double resHigh =
+        reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsHigh);
 
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateAltitude(double elevation,
                                            double altitude,
-                                           int    turbidity,
+                                           int    visibility,
                                            int    albedo,
                                            int    wavelength,
                                            double gamma,
                                            double alpha,
                                            double zero,
-                                           int    gamma_segment,
-                                           int    alpha_segment,
-                                           int    zero_segment) const {
-    const int    altitude_low = (int)altitude;
-    const double factor       = altitude - (double)altitude_low;
+                                           int    gammaSegment,
+                                           int    alphaSegment,
+                                           int    zeroSegment) const {
+    const int    altitudeLow = (int)altitude;
+    const double factor      = altitude - (double)altitudeLow;
 
-    double res_low = interpolateElevation(elevation,
-                                          altitude_low,
-                                          turbidity,
-                                          albedo,
-                                          wavelength,
-                                          gamma,
-                                          alpha,
-                                          zero,
-                                          gamma_segment,
-                                          alpha_segment,
-                                          zero_segment);
-
-    if (factor < 1e-6 || altitude_low >= (altitudes.size() - 1)) {
-        return res_low;
-    }
-
-    double res_high = interpolateElevation(elevation,
-                                           altitude_low + 1,
-                                           turbidity,
-                                           albedo,
-                                           wavelength,
-                                           gamma,
-                                           alpha,
-                                           zero,
-                                           gamma_segment,
-                                           alpha_segment,
-                                           zero_segment);
-
-    return lerp(res_low, res_high, factor);
-}
-
-double PragueSkyModel::interpolateVisibility(double elevation,
-                                             double altitude,
-                                             double turbidity,
-                                             int    albedo,
-                                             int    wavelength,
-                                             double gamma,
-                                             double alpha,
-                                             double zero,
-                                             int    gamma_segment,
-                                             int    alpha_segment,
-                                             int    zero_segment) const {
-    const int    turbidity_low = (int)turbidity;
-    const double factor        = turbidity - (double)turbidity_low;
-
-    double res_low = interpolateAltitude(elevation,
-                                         altitude,
-                                         turbidity_low,
+    double resLow = interpolateElevation(elevation,
+                                         altitudeLow,
+                                         visibility,
                                          albedo,
                                          wavelength,
                                          gamma,
                                          alpha,
                                          zero,
-                                         gamma_segment,
-                                         alpha_segment,
-                                         zero_segment);
+                                         gammaSegment,
+                                         alphaSegment,
+                                         zeroSegment);
 
-    if (factor < 1e-6 || turbidity_low >= (turbidities.size() - 1)) {
-        return res_low;
+    if (factor < 1e-6 || altitudeLow >= (altitudesRad.size() - 1)) {
+        return resLow;
     }
 
-    double res_high = interpolateAltitude(elevation,
-                                          altitude,
-                                          turbidity_low + 1,
+    double resHigh = interpolateElevation(elevation,
+                                          altitudeLow + 1,
+                                          visibility,
                                           albedo,
                                           wavelength,
                                           gamma,
                                           alpha,
                                           zero,
-                                          gamma_segment,
-                                          alpha_segment,
-                                          zero_segment);
+                                          gammaSegment,
+                                          alphaSegment,
+                                          zeroSegment);
 
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
+}
+
+double PragueSkyModel::interpolateVisibility(double elevation,
+                                             double altitude,
+                                             double visibility,
+                                             int    albedo,
+                                             int    wavelength,
+                                             double gamma,
+                                             double alpha,
+                                             double zero,
+                                             int    gammaSegment,
+                                             int    alphaSegment,
+                                             int    zeroSegment) const {
+    const int    visibilityLow = (int)visibility;
+    const double factor        = visibility - (double)visibilityLow;
+
+    double resLow = interpolateAltitude(elevation,
+                                        altitude,
+                                        visibilityLow,
+                                        albedo,
+                                        wavelength,
+                                        gamma,
+                                        alpha,
+                                        zero,
+                                        gammaSegment,
+                                        alphaSegment,
+                                        zeroSegment);
+
+    if (factor < 1e-6 || visibilityLow >= (visibilitiesRad.size() - 1)) {
+        return resLow;
+    }
+
+    double resHigh = interpolateAltitude(elevation,
+                                         altitude,
+                                         visibilityLow + 1,
+                                         albedo,
+                                         wavelength,
+                                         gamma,
+                                         alpha,
+                                         zero,
+                                         gammaSegment,
+                                         alphaSegment,
+                                         zeroSegment);
+
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateAlbedo(double elevation,
                                          double altitude,
-                                         double turbidity,
+                                         double visibility,
                                          double albedo,
                                          int    wavelength,
                                          double gamma,
                                          double alpha,
                                          double zero,
-                                         int    gamma_segment,
-                                         int    alpha_segment,
-                                         int    zero_segment) const {
-    const int    albedo_low = (int)albedo;
-    const double factor     = albedo - (double)albedo_low;
+                                         int    gammaSegment,
+                                         int    alphaSegment,
+                                         int    zeroSegment) const {
+    const int    albedoLow = (int)albedo;
+    const double factor    = albedo - (double)albedoLow;
 
-    double res_low = interpolateVisibility(elevation,
+    double resLow = interpolateVisibility(elevation,
+                                          altitude,
+                                          visibility,
+                                          albedoLow,
+                                          wavelength,
+                                          gamma,
+                                          alpha,
+                                          zero,
+                                          gammaSegment,
+                                          alphaSegment,
+                                          zeroSegment);
+
+    if (factor < 1e-6 || albedoLow >= (albedosRad.size() - 1)) {
+        return resLow;
+    }
+
+    double resHigh = interpolateVisibility(elevation,
                                            altitude,
-                                           turbidity,
-                                           albedo_low,
+                                           visibility,
+                                           albedoLow + 1,
                                            wavelength,
                                            gamma,
                                            alpha,
                                            zero,
-                                           gamma_segment,
-                                           alpha_segment,
-                                           zero_segment);
+                                           gammaSegment,
+                                           alphaSegment,
+                                           zeroSegment);
 
-    if (factor < 1e-6 || albedo_low >= (albedos.size() - 1)) {
-        return res_low;
-    }
-
-    double res_high = interpolateVisibility(elevation,
-                                            altitude,
-                                            turbidity,
-                                            albedo_low + 1,
-                                            wavelength,
-                                            gamma,
-                                            alpha,
-                                            zero,
-                                            gamma_segment,
-                                            alpha_segment,
-                                            zero_segment);
-
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateWavelength(double elevation,
                                              double altitude,
-                                             double turbidity,
+                                             double visibility,
                                              double albedo,
                                              double wavelength,
                                              double gamma,
                                              double alpha,
                                              double zero,
-                                             int    gamma_segment,
-                                             int    alpha_segment,
-                                             int    zero_segment) const {
+                                             int    gammaSegment,
+                                             int    alphaSegment,
+                                             int    zeroSegment) const {
     // Don't interpolate, use the bin it belongs to
 
     return interpolateAlbedo(elevation,
                              altitude,
-                             turbidity,
+                             visibility,
                              albedo,
                              (int)wavelength,
                              gamma,
                              alpha,
                              zero,
-                             gamma_segment,
-                             alpha_segment,
-                             zero_segment);
+                             gammaSegment,
+                             alphaSegment,
+                             zeroSegment);
 }
 
 double PragueSkyModel::skyRadiance(const double theta,
@@ -978,42 +934,40 @@ double PragueSkyModel::skyRadiance(const double theta,
                                    const double zero,
                                    const double elevation,
                                    const double altitude,
-                                   const double turbidity,
+                                   const double visibility,
                                    const double albedo,
                                    const double wavelength) const {
-    (void)theta;
-
     // Translate parameter values to indices
 
-    const double turbidity_control = mapParameter(turbidity, turbidities);
-    const double albedo_control    = mapParameter(albedo, albedos);
-    const double altitude_control  = mapParameter(altitude, altitudes);
-    const double elevation_control = mapParameter(radiansToDegrees(elevation), elevations);
+    const double visibilityControl = mapParameter(visibility, visibilitiesRad);
+    const double albedoControl    = mapParameter(albedo, albedosRad);
+    const double altitudeControl  = mapParameter(altitude, altitudesRad);
+    const double elevationControl = mapParameter(radiansToDegrees(elevation), elevationsRad);
 
-    const double channel_control = (wavelength - channel_start) / channel_width;
+    const double channelControl = (wavelength - channelStart) / channelWidth;
 
-    if (channel_control >= channels || channel_control < 0.)
-        return 0.;
+    if (channelControl >= channels || channelControl < 0.0)
+        return 0.0;
 
     // Get params corresponding to the indices, reconstruct result and interpolate
 
-    const double alpha = elevation < 0 ? shadow : zero;
+    const double alpha = elevation < 0.0 ? shadow : zero;
 
-    const int gamma_segment = findSegment(gamma, sun_nbreaks, sun_breaks);
-    const int alpha_segment = findSegment(alpha, zenith_nbreaks, zenith_breaks);
-    const int zero_segment  = findSegment(zero, emph_nbreaks, emph_breaks);
+    const int gammaSegment = findSegment(gamma, sunBreaksRad);
+    const int alphaSegment = findSegment(alpha, zenithBreaksRad);
+    const int zeroSegment  = findSegment(zero, emphBreaksRad);
 
-    const double res = interpolateWavelength(elevation_control,
-                                             altitude_control,
-                                             turbidity_control,
-                                             albedo_control,
-                                             channel_control,
+    const double res = interpolateWavelength(elevationControl,
+                                             altitudeControl,
+                                             visibilityControl,
+                                             albedoControl,
+                                             channelControl,
                                              gamma,
                                              alpha,
                                              zero,
-                                             gamma_segment,
-                                             alpha_segment,
-                                             zero_segment);
+                                             gammaSegment,
+                                             alphaSegment,
+                                             zeroSegment);
 
     // ASSERT_NONNEGATIVE_DOUBLE(res);
 
@@ -1030,7 +984,7 @@ double PragueSkyModel::sunRadiance(const double theta,
                                    const double zero,
                                    const double elevation,
                                    const double altitude,
-                                   const double turbidity,
+                                   const double visibility,
                                    const double albedo,
                                    const double wavelength) const {
     (void)gamma;
@@ -1051,7 +1005,7 @@ double PragueSkyModel::sunRadiance(const double theta,
 
     double tau = PragueSkyModel::transmittance(theta,
                                                altitude,
-                                               turbidity,
+                                               visibility,
                                                wavelength,
                                                std::numeric_limits<double>::max());
     // ASSERT_UNIT_RANGE_DOUBLE(tau);
@@ -1063,51 +1017,47 @@ double PragueSkyModel::sunRadiance(const double theta,
 // Transmittance
 ///////////////////////////////////////////////
 
-int circleBounds2D(double x_v, double y_v, double y_c, double radius, double* d) {
-    double qa = (x_v * x_v) + (y_v * y_v);
-    double qb = 2.0 * y_c * y_v;
-    double qc = (y_c * y_c) - (radius * radius);
+bool circleBounds2D(double xV, double yV, double yC, double radius, double* d) {
+    const double qa = (xV * xV) + (yV * yV);
+    const double qb = 2.0 * yC * yV;
+    const double qc = (yC * yC) - (radius * radius);
     double n  = (qb * qb) - (4.0 * qa * qc);
     if (n <= 0) {
-        return 0;
+        return false;
     }
-    float d1;
-    float d2;
     n  = sqrt(n);
-    d1 = (-qb + n) / (2.0 * qa);
-    d2 = (-qb - n) / (2.0 * qa);
-    *d = (d1 > 0 && d2 > 0) ? (d1 < d2 ? d1 : d2) : (d1 > d2 ? d1 : d2); // It fits in one line.
+    const float d1 = (-qb + n) / (2.0 * qa);
+    const float d2 = (-qb - n) / (2.0 * qa);
+    *d = (d1 > 0 && d2 > 0) ? (d1 < d2 ? d1 : d2) : (d1 > d2 ? d1 : d2);
     if (*d <= 0) {
-        return 0;
+        return false;
     }
-    return 1;
+    return true;
 }
 
-void scaleAD(double x_p, double y_p, double* a, double* d) {
-    double n;
-    n  = sqrt((x_p * x_p) + (y_p * y_p));
+void scaleAD(double xP, double yP, double* a, double* d) {
+    const double n = sqrt((xP * xP) + (yP * yP));
     *a = n - PLANET_RADIUS;
-    *a = *a > 0 ? *a : 0;
+    *a = *a > 0.0 ? *a : 0.0;
     *a = pow(*a / 100000.0, 1.0 / 3.0);
-    *d = acos(y_p / n) * PLANET_RADIUS;
-    *d = *d / 1571524.413613; // Maximum distance to the edge of the atmosphere in
-                              // the transmittance model
+    *d = acos(yP / n) * PLANET_RADIUS;
+    *d = *d / DIST_TO_EDGE;
     *d = pow(*d, 0.25);
     *d = *d > 1.0 ? 1.0 : *d;
 }
 
 void toAD(double theta, double distance, double altitude, double* a, double* d) {
     // Ray circle intersection
-    double x_v       = sin(theta);
-    double y_v       = cos(theta);
-    double y_c       = PLANET_RADIUS + altitude;
-    double atmo_edge = PLANET_RADIUS + 90000;
+    double xV       = sin(theta);
+    double yV       = cos(theta);
+    double yC       = PLANET_RADIUS + altitude;
+    double atmoEdge = PLANET_RADIUS + 90000;
     double n;
     if (altitude < 0.001) // Handle altitudes close to 0 separately to avoid reporting
                           // intersections on the other side of the planet
     {
         if (theta <= 0.5 * PI) {
-            if (circleBounds2D(x_v, y_v, y_c, atmo_edge, &n) == 0) {
+            if (!circleBounds2D(xV, yV, yC, atmoEdge, &n)) {
                 // Then we have a problem!
                 // Return something, but this should never happen so long as the camera
                 // is inside the atmosphere Which it should be in this work
@@ -1119,18 +1069,18 @@ void toAD(double theta, double distance, double altitude, double* a, double* d) 
             n = 0;
         }
     } else {
-        if (circleBounds2D(x_v, y_v, y_c, PLANET_RADIUS, &n) == 1) // Check for planet intersection
+        if (circleBounds2D(xV, yV, yC, PLANET_RADIUS, &n)) // Check for planet intersection
         {
             if (n <= distance) // We do intersect the planet so return a and d at the
                                // surface
             {
-                double x_p = x_v * n;
-                double y_p = (y_v * n) + PLANET_RADIUS + altitude;
+                double x_p = xV * n;
+                double y_p = (yV * n) + PLANET_RADIUS + altitude;
                 scaleAD(x_p, y_p, a, d);
                 return;
             }
         }
-        if (circleBounds2D(x_v, y_v, y_c, atmo_edge, &n) == 0) {
+        if (!circleBounds2D(xV, yV, yC, atmoEdge, &n)) {
             // Then we have a problem!
             // Return something, but this should never happen so long as the camera is
             // inside the atmosphere Which it should be in this work
@@ -1139,73 +1089,75 @@ void toAD(double theta, double distance, double altitude, double* a, double* d) 
             return;
         }
     }
-    double distance_corrected = n;
+    double distanceCorrected = n;
     // Use the smaller of the distances
-    distance_corrected = distance < distance_corrected ? distance : distance_corrected;
+    distanceCorrected = distance < distanceCorrected ? distance : distanceCorrected;
     // Points in world space
-    double x_p = x_v * distance_corrected;
-    double y_p = (y_v * distance_corrected) + PLANET_RADIUS + altitude;
-    scaleAD(x_p, y_p, a, d);
+    const double xP = xV * distanceCorrected;
+    const double yP = (yV * distanceCorrected) + PLANET_RADIUS + altitude;
+    scaleAD(xP, yP, a, d);
 }
 
-const float* PragueSkyModel::transmittanceCoefsIndex(const int turbidity,
-                                                     const int altitude,
-                                                     const int wavelength) const {
-    int transmittance_values_per_turbidity = trans_rank * 11 * trans_altitudes;
-    return &transmission_dataset_V[(turbidity * transmittance_values_per_turbidity) +
-                                   (((altitude * 11) + wavelength) * trans_rank)];
+std::vector<float>::const_iterator PragueSkyModel::transmittanceCoefsIndex(const int visibility,
+                                                                           const int altitude,
+                                                                           const int wavelength) const {
+    int transmittanceValuesPerVisibility = rankTrans * 11 * altitudesTrans.size();
+    return datasetTransV.cbegin() + (visibility * transmittanceValuesPerVisibility) +
+           (((altitude * 11) + wavelength) * rankTrans);
 }
 
-void PragueSkyModel::transmittanceInterpolateWaveLength(const int    turbidity,
+void PragueSkyModel::transmittanceInterpolateWaveLength(const int    visibility,
                                                         const int    altitude,
-                                                        const int    wavelength_low,
-                                                        const int    wavelength_inc,
-                                                        const double wavelength_w,
+                                                        const int    wavelengthLow,
+                                                        const int    wavelengthInc,
+                                                        const double wavelengthW,
                                                         double*      coefficients) const {
-    const float* wll = transmittanceCoefsIndex(turbidity, altitude, wavelength_low);
-    const float* wlu = transmittanceCoefsIndex(turbidity, altitude, wavelength_low + wavelength_inc);
-    for (int i = 0; i < trans_rank; i++) {
-        coefficients[i] = lerp(wll[i], wlu[i], wavelength_w);
+    const std::vector<float>::const_iterator wll =
+        transmittanceCoefsIndex(visibility, altitude, wavelengthLow);
+    const std::vector<float>::const_iterator wlu =
+        transmittanceCoefsIndex(visibility, altitude, wavelengthLow + wavelengthInc);
+    for (int i = 0; i < rankTrans; i++) {
+        coefficients[i] = lerp(wll[i], wlu[i], wavelengthW);
     }
 }
 
-double PragueSkyModel::calcTransmittanceSVDAltitude(const int    turbidity,
+double PragueSkyModel::calcTransmittanceSVDAltitude(const int    visibility,
                                                     const int    altitude,
-                                                    const int    wavelength_low,
-                                                    const int    wavelength_inc,
-                                                    const double wavelength_factor,
-                                                    const int    a_int,
-                                                    const int    d_int,
-                                                    const int    a_inc,
-                                                    const int    d_inc,
+                                                    const int    wavelengthLow,
+                                                    const int    wavelengthInc,
+                                                    const double wavelengthFactor,
+                                                    const int    aInt,
+                                                    const int    dInt,
+                                                    const int    aInc,
+                                                    const int    dInc,
                                                     const double wa,
                                                     const double wd) const {
-    float  t[4] = { 0.0, 0.0, 0.0, 0.0 };
-    double interpolated_coefficients[SVD_RANK];
-    transmittanceInterpolateWaveLength(turbidity,
+    std::array<float, 4>         t = { 0.0, 0.0, 0.0, 0.0 };
+    std::array<double, SVD_RANK> interpolatedCoefficients;
+    transmittanceInterpolateWaveLength(visibility,
                                        altitude,
-                                       wavelength_low,
-                                       wavelength_inc,
-                                       wavelength_factor,
-                                       interpolated_coefficients);
+                                       wavelengthLow,
+                                       wavelengthInc,
+                                       wavelengthFactor,
+                                       interpolatedCoefficients.data());
     int index = 0;
     // Calculate pow space values
-    for (int al = a_int; al <= a_int + a_inc; al++) {
-        for (int dl = d_int; dl <= d_int + d_inc; dl++) {
-            for (int i = 0; i < trans_rank; i++) {
+    for (int al = aInt; al <= aInt + aInc; al++) {
+        for (int dl = dInt; dl <= dInt + dInc; dl++) {
+            for (int i = 0; i < rankTrans; i++) {
                 t[index] =
-                    t[index] + (transmission_dataset_U[(altitude * trans_n_a * trans_n_d * trans_rank) +
-                                                       (((dl * trans_n_a) + al) * trans_rank) + i] *
-                                interpolated_coefficients[i]);
+                    t[index] + (datasetTransU[(altitude * aDim * dDim * rankTrans) +
+                                                       (((dl * aDim) + al) * rankTrans) + i] *
+                        interpolatedCoefficients[i]);
             }
             index++;
         }
     }
-    if (d_inc == 1) {
+    if (dInc == 1) {
         t[0] = lerp(t[0], t[1], wd);
         t[1] = lerp(t[2], t[3], wd);
     }
-    if (a_inc == 1) {
+    if (aInc == 1) {
         t[0] = lerp(t[0], t[1], wa);
     }
     return t[0];
@@ -1213,113 +1165,104 @@ double PragueSkyModel::calcTransmittanceSVDAltitude(const int    turbidity,
 
 double PragueSkyModel::calcTransmittanceSVD(const double a,
                                             const double d,
-                                            const int    turbidity,
-                                            const int    wavelength_low,
-                                            const int    wavelength_inc,
-                                            const double wavelength_factor,
-                                            const int    altitude_low,
-                                            const int    altitude_inc,
-                                            const double altitude_factor) const {
-    int    a_int = (int)floor(a * (double)trans_n_a);
-    int    d_int = (int)floor(d * (double)trans_n_d);
-    int    a_inc = 0;
-    int    d_inc = 0;
-    double wa    = (a * (double)trans_n_a) - (double)a_int;
-    double wd    = (d * (double)trans_n_d) - (double)d_int;
-    if (a_int < (trans_n_a - 1)) {
-        a_inc = 1;
-        wa    = nonlinlerp((double)a_int / (double)trans_n_a,
-                        (double)(a_int + a_inc) / (double)trans_n_a,
-                        a,
-                        3.0);
+                                            const int    visibility,
+                                            const int    wavelengthLow,
+                                            const int    wavelengthInc,
+                                            const double wavelengthFactor,
+                                            const int    altitudeLow,
+                                            const int    altitudeInc,
+                                            const double altitudeFactor) const {
+    int    aInt = int(floor(a * double(aDim)));
+    int    dInt = int(floor(d * double(dDim)));
+    int    aInc = 0;
+    int    dInc = 0;
+    double wa   = (a * double(aDim)) - double(aInt);
+    double wd   = (d * double(dDim)) - double(dInt);
+    if (aInt < (aDim - 1)) {
+        aInc = 1;
+        wa   = nonlinlerp(double(aInt) / double(aDim), double(aInt + aInc) / double(aDim), a, 3.0);
     } else {
-        a_int = trans_n_a - 1;
-        wa    = 0;
+        aInt = aDim - 1;
+        wa   = 0;
     }
-    if (d_int < (trans_n_d - 1)) {
-        d_inc = 1;
-        wd    = nonlinlerp((double)d_int / (double)trans_n_d,
-                        (double)(d_int + d_inc) / (double)trans_n_d,
-                        d,
-                        4.0);
+    if (dInt < (dDim - 1)) {
+        dInc = 1;
+        wd   = nonlinlerp(double(dInt) / double(dDim), double(dInt + dInc) / double(dDim), d, 4.0);
     } else {
-        d_int = trans_n_d - 1;
-        wd    = 0;
+        dInt = dDim - 1;
+        wd   = 0;
     }
-    wa = wa < 0 ? 0 : wa;
-    wa = wa > 1.0 ? 1.0 : wa;
-    wd = wd < 0 ? 0 : wd;
-    wd = wd > 1.0 ? 1.0 : wd;
-    double trans[2];
-    trans[0] = calcTransmittanceSVDAltitude(turbidity,
-                                            altitude_low,
-                                            wavelength_low,
-                                            wavelength_inc,
-                                            wavelength_factor,
-                                            a_int,
-                                            d_int,
-                                            a_inc,
-                                            d_inc,
-                                            wa,
-                                            wd);
-    if (altitude_inc == 1) {
-        trans[1] = calcTransmittanceSVDAltitude(turbidity,
-                                                altitude_low + altitude_inc,
-                                                wavelength_low,
-                                                wavelength_inc,
-                                                wavelength_factor,
-                                                a_int,
-                                                d_int,
-                                                a_inc,
-                                                d_inc,
+    wa = clamp01(wa);
+    wd = clamp01(wd);
+
+    double trans = calcTransmittanceSVDAltitude(visibility,
+                                                altitudeLow,
+                                                wavelengthLow,
+                                                wavelengthInc,
+                                                wavelengthFactor,
+                                                aInt,
+                                                dInt,
+                                                aInc,
+                                                dInc,
                                                 wa,
                                                 wd);
-        trans[0] = lerp(trans[0], trans[1], altitude_factor);
+    if (altitudeInc == 1) {
+        const double transHigh = calcTransmittanceSVDAltitude(visibility,
+                                                              altitudeLow + altitudeInc,
+                                                              wavelengthLow,
+                                                              wavelengthInc,
+                                                              wavelengthFactor,
+                                                              aInt,
+                                                              dInt,
+                                                              aInc,
+                                                              dInc,
+                                                              wa,
+                                                              wd);
+        trans                  = lerp(trans, transHigh, altitudeFactor);
     }
-    return trans[0];
+    return trans;
 }
 
 double PragueSkyModel::transmittance(const double theta,
                                      const double altitude,
-                                     const double turbidity,
+                                     const double visibility,
                                      const double wavelength,
                                      const double distance) const {
     /*ASSERT_DOUBLE_WITHIN_RANGE(theta, 0.0, PI);
     ASSERT_DOUBLE_WITHIN_RANGE(altitude, 0.0, 15000.0);
-    ASSERT_NONNEGATIVE_DOUBLE(turbidity);
+    ASSERT_NONNEGATIVE_DOUBLE(visibility);
     ASSERT_POSITIVE_DOUBLE(wavelength);
     ASSERT_POSITIVE_DOUBLE(distance);*/
 
-    const double wavelength_norm = (wavelength - channel_start) / channel_width;
-    if (wavelength_norm >= channels || wavelength_norm < 0.)
+    const double wavelengthNorm = (wavelength - channelStart) / channelWidth;
+    if (wavelengthNorm >= channels || wavelengthNorm < 0.)
         return 0.;
-    const int    wavelength_low    = (int)wavelength_norm;
-    const double wavelength_factor = 0.0;
-    const int    wavelength_inc    = wavelength_low < 10 ? 1 : 0;
-    /*ASSERT_INTEGER_WITHIN_RANGE(wavelength_low, 0, 10);
-    ASSERT_DOUBLE_WITHIN_RANGE(wavelength_factor, 0.0, 1.0);
-    ASSERT_INTEGER_WITHIN_RANGE(wavelength_inc, 0, 1);*/
+    const int    wavelengthLow    = (int)wavelengthNorm;
+    const double wavelengthFactor = 0.0;
+    const int    wavelengthInc    = wavelengthLow < 10 ? 1 : 0;
+    /*ASSERT_INTEGER_WITHIN_RANGE(wavelengthLow, 0, 10);
+    ASSERT_DOUBLE_WITHIN_RANGE(wavelengthFactor, 0.0, 1.0);
+    ASSERT_INTEGER_WITHIN_RANGE(wavelengthInc, 0, 1);*/
 
-    int    altitude_low;
-    double altitude_factor;
-    int    altitude_inc;
-    findInArray(transmission_altitudes,
-                trans_altitudes,
+    int    altitudeLow;
+    double altitudeFactor;
+    int    altitudeInc;
+    findInArray(altitudesTrans,
                 altitude,
-                &altitude_low,
-                &altitude_inc,
-                &altitude_factor);
-    /*ASSERT_INTEGER_WITHIN_RANGE(altitude_low, 0, 21);
-  ASSERT_DOUBLE_WITHIN_RANGE(altitude_factor, 0.0, 1.0);
-  ASSERT_INTEGER_WITHIN_RANGE(altitude_inc, 0, 1);*/
+                &altitudeLow,
+                &altitudeInc,
+                &altitudeFactor);
+    /*ASSERT_INTEGER_WITHIN_RANGE(altitudeLow, 0, 21);
+  ASSERT_DOUBLE_WITHIN_RANGE(altitudeFactor, 0.0, 1.0);
+  ASSERT_INTEGER_WITHIN_RANGE(altitudeInc, 0, 1);*/
 
-    int    turb_low;
-    double turb_w;
-    int    turb_inc;
-    findInArray(transmission_turbities, trans_turbidities, turbidity, &turb_low, &turb_inc, &turb_w);
-    /*ASSERT_INTEGER_WITHIN_RANGE(turb_low, 0, 2);
-  ASSERT_DOUBLE_WITHIN_RANGE(turb_w, 0.0, 1.0);
-  ASSERT_INTEGER_WITHIN_RANGE(turb_inc, 0, 1);*/
+    int    visibilityLow;
+    double visibilityW;
+    int    visibilityInc;
+    findInArray(visibilitiesTrans, visibility, &visibilityLow, &visibilityInc, &visibilityW);
+    /*ASSERT_INTEGER_WITHIN_RANGE(visibilityLow, 0, 2);
+  ASSERT_DOUBLE_WITHIN_RANGE(visibilityW, 0.0, 1.0);
+  ASSERT_INTEGER_WITHIN_RANGE(visibilityInc, 0, 1);*/
 
     // Calculate normalized and non-linearly scaled position in the atmosphere
     double a;
@@ -1328,30 +1271,30 @@ double PragueSkyModel::transmittance(const double theta,
     /*ASSERT_NONNEGATIVE_DOUBLE(a);
     ASSERT_NONNEGATIVE_DOUBLE(d);*/
 
-    // Evaluate basis at low turbidity
-    double trans_low = calcTransmittanceSVD(a,
+    // Evaluate basis at low visibility
+    double transLow = calcTransmittanceSVD(a,
                                             d,
-                                            turb_low,
-                                            wavelength_low,
-                                            wavelength_inc,
-                                            wavelength_factor,
-                                            altitude_low,
-                                            altitude_inc,
-                                            altitude_factor);
+                                            visibilityLow,
+                                            wavelengthLow,
+                                            wavelengthInc,
+                                            wavelengthFactor,
+                                            altitudeLow,
+                                            altitudeInc,
+                                            altitudeFactor);
 
-    // Evaluate basis at high turbidity
-    double trans_high = calcTransmittanceSVD(a,
+    // Evaluate basis at high visibility
+    double transHigh = calcTransmittanceSVD(a,
                                              d,
-                                             turb_low + turb_inc,
-                                             wavelength_low,
-                                             wavelength_inc,
-                                             wavelength_factor,
-                                             altitude_low,
-                                             altitude_inc,
-                                             altitude_factor);
+                                             visibilityLow + visibilityInc,
+                                             wavelengthLow,
+                                             wavelengthInc,
+                                             wavelengthFactor,
+                                             altitudeLow,
+                                             altitudeInc,
+                                             altitudeFactor);
 
     // Return interpolated transmittance values
-    double trans = lerp(trans_low, trans_high, turb_w);
+    double trans = lerp(transLow, transHigh, visibilityW);
     // ASSERT_VALID_DOUBLE(trans);
 
     trans = clamp01(trans);
@@ -1367,200 +1310,200 @@ double PragueSkyModel::transmittance(const double theta,
 
 double PragueSkyModel::interpolateElevationPol(double elevation,
                                                int    altitude,
-                                               int    turbidity,
+                                               int    visibility,
                                                int    albedo,
                                                int    wavelength,
                                                double gamma,
                                                double alpha,
-                                               int    gamma_segment,
-                                               int    alpha_segment) const {
-    const int    elevation_low = (int)elevation;
-    const double factor        = elevation - (double)elevation_low;
+                                               int    gammaSegment,
+                                               int    alphaSegment) const {
+    const int    elevationLow = (int)elevation;
+    const double factor        = elevation - (double)elevationLow;
 
-    const double* control_params_low = controlParams(polarisation_dataset,
-                                                     total_coefs_single_config_pol,
-                                                     elevation_low,
+    const std::vector<double>::const_iterator controlParamsLow = controlParams(datasetPol,
+                                                     totalCoefsSingleConfigPol,
+                                                     elevationLow,
                                                      altitude,
-                                                     turbidity,
+                                                     visibility,
                                                      albedo,
                                                      wavelength);
 
-    double res_low = reconstructPol(gamma, alpha, gamma_segment, alpha_segment, control_params_low);
+    double resLow = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsLow);
 
-    if (factor < 1e-6 || elevation_low >= (elevations.size() - 1)) {
-        return res_low;
+    if (factor < 1e-6 || elevationLow >= (elevationsRad.size() - 1)) {
+        return resLow;
     }
 
-    const double* control_params_high = controlParams(polarisation_dataset,
-                                                      total_coefs_single_config_pol,
-                                                      elevation_low + 1,
+    const std::vector<double>::const_iterator controlParamsHigh = controlParams(datasetPol,
+                                                      totalCoefsSingleConfigPol,
+                                                      elevationLow + 1,
                                                       altitude,
-                                                      turbidity,
+                                                      visibility,
                                                       albedo,
                                                       wavelength);
 
-    double res_high = reconstructPol(gamma, alpha, gamma_segment, alpha_segment, control_params_high);
+    double resHigh = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsHigh);
 
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateAltitudePol(double elevation,
                                               double altitude,
-                                              int    turbidity,
+                                              int    visibility,
                                               int    albedo,
                                               int    wavelength,
                                               double gamma,
                                               double alpha,
-                                              int    gamma_segment,
-                                              int    alpha_segment) const {
-    const int    altitude_low = (int)altitude;
-    const double factor       = altitude - (double)altitude_low;
+                                              int    gammaSegment,
+                                              int    alphaSegment) const {
+    const int    altitudeLow = (int)altitude;
+    const double factor       = altitude - (double)altitudeLow;
 
-    double res_low = interpolateElevationPol(elevation,
-                                             altitude_low,
-                                             turbidity,
+    double resLow = interpolateElevationPol(elevation,
+                                             altitudeLow,
+                                             visibility,
                                              albedo,
                                              wavelength,
                                              gamma,
                                              alpha,
-                                             gamma_segment,
-                                             alpha_segment);
+                                             gammaSegment,
+                                             alphaSegment);
 
-    if (factor < 1e-6 || altitude_low >= (altitudes.size() - 1)) {
-        return res_low;
+    if (factor < 1e-6 || altitudeLow >= (altitudesRad.size() - 1)) {
+        return resLow;
     }
 
-    double res_high = interpolateElevationPol(elevation,
-                                              altitude_low + 1,
-                                              turbidity,
+    double resHigh = interpolateElevationPol(elevation,
+                                              altitudeLow + 1,
+                                              visibility,
                                               albedo,
                                               wavelength,
                                               gamma,
                                               alpha,
-                                              gamma_segment,
-                                              alpha_segment);
+                                              gammaSegment,
+                                              alphaSegment);
 
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateVisibilityPol(double elevation,
                                                 double altitude,
-                                                double turbidity,
+                                                double visibility,
                                                 int    albedo,
                                                 int    wavelength,
                                                 double gamma,
                                                 double alpha,
-                                                int    gamma_segment,
-                                                int    alpha_segment) const {
-    // Ignore turbidity
+                                                int    gammaSegment,
+                                                int    alphaSegment) const {
+    // Ignore visibility
 
     return interpolateAltitudePol(elevation,
                                   altitude,
-                                  (int)turbidity,
+                                  (int)visibility,
                                   albedo,
                                   wavelength,
                                   gamma,
                                   alpha,
-                                  gamma_segment,
-                                  alpha_segment);
+                                  gammaSegment,
+                                  alphaSegment);
 }
 
 double PragueSkyModel::interpolateAlbedoPol(double elevation,
                                             double altitude,
-                                            double turbidity,
+                                            double visibility,
                                             double albedo,
                                             int    wavelength,
                                             double gamma,
                                             double alpha,
-                                            int    gamma_segment,
-                                            int    alpha_segment) const {
-    const int    albedo_low = (int)albedo;
-    const double factor     = albedo - (double)albedo_low;
+                                            int    gammaSegment,
+                                            int    alphaSegment) const {
+    const int    albedoLow = (int)albedo;
+    const double factor     = albedo - (double)albedoLow;
 
-    double res_low = interpolateVisibilityPol(elevation,
+    double resLow = interpolateVisibilityPol(elevation,
                                               altitude,
-                                              turbidity,
-                                              albedo_low,
+                                              visibility,
+                                              albedoLow,
                                               wavelength,
                                               gamma,
                                               alpha,
-                                              gamma_segment,
-                                              alpha_segment);
+                                              gammaSegment,
+                                              alphaSegment);
 
-    if (factor < 1e-6 || albedo_low >= (albedos.size() - 1)) {
-        return res_low;
+    if (factor < 1e-6 || albedoLow >= (albedosRad.size() - 1)) {
+        return resLow;
     }
 
-    double res_high = interpolateVisibilityPol(elevation,
+    double resHigh = interpolateVisibilityPol(elevation,
                                                altitude,
-                                               turbidity,
-                                               albedo_low + 1,
+                                               visibility,
+                                               albedoLow + 1,
                                                wavelength,
                                                gamma,
                                                alpha,
-                                               gamma_segment,
-                                               alpha_segment);
+                                               gammaSegment,
+                                               alphaSegment);
 
-    return lerp(res_low, res_high, factor);
+    return lerp(resLow, resHigh, factor);
 }
 
 double PragueSkyModel::interpolateWavelengthPol(double elevation,
                                                 double altitude,
-                                                double turbidity,
+                                                double visibility,
                                                 double albedo,
                                                 double wavelength,
                                                 double gamma,
                                                 double alpha,
-                                                int    gamma_segment,
-                                                int    alpha_segment) const {
+                                                int    gammaSegment,
+                                                int    alphaSegment) const {
     // Don't interpolate, use the bin it belongs to
 
     return interpolateAlbedoPol(elevation,
                                 altitude,
-                                turbidity,
+                                visibility,
                                 albedo,
                                 (int)wavelength,
                                 gamma,
                                 alpha,
-                                gamma_segment,
-                                alpha_segment);
+                                gammaSegment,
+                                alphaSegment);
 }
 
 double PragueSkyModel::polarisation(const double theta,
                                     const double gamma,
                                     const double elevation,
                                     const double altitude,
-                                    const double turbidity,
+                                    const double visibility,
                                     const double albedo,
                                     const double wavelength) const {
     // If no polarisation data available
-    if (tensor_components_pol == 0) {
+    if (rankPol == 0) {
         return 0.0;
     }
 
     // Translate parameter values to indices
 
-    const double turbidity_control = mapParameter(turbidity, turbidities);
-    const double albedo_control    = mapParameter(albedo, albedos);
-    const double altitude_control  = mapParameter(altitude, altitudes);
-    const double elevation_control = mapParameter(radiansToDegrees(elevation),  elevations);
+    const double visibilityControl = mapParameter(visibility, visibilitiesRad);
+    const double albedoControl    = mapParameter(albedo, albedosRad);
+    const double altitudeControl  = mapParameter(altitude, altitudesRad);
+    const double elevationControl = mapParameter(radiansToDegrees(elevation),  elevationsRad);
 
-    const double channel_control = (wavelength - channel_start) / channel_width;
-    if (channel_control >= channels || channel_control < 0.)
+    const double channelControl = (wavelength - channelStart) / channelWidth;
+    if (channelControl >= channels || channelControl < 0.)
         return 0.;
 
     // Get params corresponding to the indices, reconstruct result and interpolate
 
-    const int gamma_segment = findSegment(gamma, sun_nbreaks_pol, sun_breaks_pol);
-    const int theta_segment = findSegment(theta, zenith_nbreaks_pol, zenith_breaks_pol);
+    const int gammaSegment = findSegment(gamma, sunBreaksPol);
+    const int thetaSegment = findSegment(theta, zenithBreaksPol);
 
-    return -interpolateWavelengthPol(elevation_control,
-                                     altitude_control,
-                                     turbidity_control,
-                                     albedo_control,
-                                     channel_control,
+    return -interpolateWavelengthPol(elevationControl,
+                                     altitudeControl,
+                                     visibilityControl,
+                                     albedoControl,
+                                     channelControl,
                                      gamma,
                                      theta,
-                                     gamma_segment,
-                                     theta_segment);
+                                     gammaSegment,
+                                     thetaSegment);
 }

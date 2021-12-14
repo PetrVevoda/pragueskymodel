@@ -28,84 +28,77 @@ public:
         Vector3 operator*(const double factor) const { return Vector3(x * factor, y * factor, z * factor); }
 
         Vector3 operator/(const double factor) const { return Vector3(x / factor, y / factor, z / factor); }
+
+        bool isZero() const { return x == 0.0 && y == 0.0 && z == 0.0; }
     };
 
 private:
+    int    channels;
+    double channelStart;
+    double channelWidth;
+
     // Radiance metadata
 
-    std::vector<double> turbidities;
-    std::vector<double> albedos;
-    std::vector<double> altitudes;
-    std::vector<double> elevations;
+    std::vector<double> visibilitiesRad;
+    std::vector<double> albedosRad;
+    std::vector<double> altitudesRad;
+    std::vector<double> elevationsRad;
 
-    int    channels;
-    double channel_start;
-    double channel_width;
+    int rankRad;
 
-    int tensor_components;
+    int                 sunOffsetRad;
+    int                 sunStrideRad;
+    std::vector<double> sunBreaksRad;
 
-    int     sun_nbreaks;
-    int     sun_offset;
-    int     sun_stride;
-    double* sun_breaks;
+    int                 zenithOffsetRad;
+    int                 zenithStrideRad;
+    std::vector<double> zenithBreaksRad;
 
-    int     zenith_nbreaks;
-    int     zenith_offset;
-    int     zenith_stride;
-    double* zenith_breaks;
+    int                 emphOffsetRad;
+    std::vector<double> emphBreaksRad;
 
-    int     emph_nbreaks;
-    int     emph_offset;
-    double* emph_breaks;
-
-    int total_coefs_single_config; // this is for one specific configuration
-    int total_coefs_all_configs;
-    int total_configs;
+    int totalCoefsSingleConfigRad; // this is for one specific configuration
+    int totalCoefsAllConfigsRad;
+    int totalConfigsRad;
 
     // Radiance data
 
-    double* radiance_dataset;
+    std::vector<double> datasetRad;
 
     // Tranmittance metadata
 
-    int    trans_n_a;
-    int    trans_n_d;
-    int    trans_turbidities;
-    int    trans_altitudes;
-    int    trans_rank;
-    float* transmission_altitudes;
-    float* transmission_turbities;
+    int                aDim;
+    int                dDim;
+    int                rankTrans;
+    std::vector<float> altitudesTrans;
+    std::vector<float> visibilitiesTrans;
 
     // Tranmittance data
 
-    float* transmission_dataset_U;
-    float* transmission_dataset_V;
+    std::vector<float> datasetTransU;
+    std::vector<float> datasetTransV;
 
     // Polarisation metadata
 
-    int tensor_components_pol;
+    int rankPol;
 
-    int     sun_nbreaks_pol;
-    int     sun_offset_pol;
-    int     sun_stride_pol;
-    double* sun_breaks_pol;
+    int                 sunOffsetPol;
+    int                 sunStridePol;
+    std::vector<double> sunBreaksPol;
 
-    int     zenith_nbreaks_pol;
-    int     zenith_offset_pol;
-    int     zenith_stride_pol;
-    double* zenith_breaks_pol;
+    int                 zenithOffsetPol;
+    int                 zenithStridePol;
+    std::vector<double> zenithBreaksPol;
 
-    int total_coefs_single_config_pol; // this is for one specific configuration
-    int total_coefs_all_configs_pol;
+    int totalCoefsSingleConfigPol; // this is for one specific configuration
+    int totalCoefsAllConfigsPol;
 
     // Polarisation data
 
-    double* polarisation_dataset;
+    std::vector<double> datasetPol;
 
 public:
     PragueSkyModel(const char* library_path);
-
-    ~PragueSkyModel();
 
     //   This computes the canonical angles of the model from
     //   a normalised view vector and solar elevation.
@@ -184,27 +177,27 @@ private:
     void readTransmittance(FILE* handle);
     void readPolarisation(FILE* handle);
 
-    const double* controlParams(const double* dataset,
-                                const int     total_coefs_single_config,
+    std::vector<double>::const_iterator PragueSkyModel::controlParams(const std::vector<double>& dataset,
+                                const int     totalCoefsSingleConfig,
                                 const int     elevation,
                                 const int     altitude,
                                 const int     turbidity,
                                 const int     albedo,
                                 const int     wavelength) const;
 
-    double reconstruct(const double  gamma,
-                       const double  alpha,
-                       const double  zero,
-                       const int     gamma_segment,
-                       const int     alpha_segment,
-                       const int     zero_segment,
-                       const double* control_params) const;
+    double reconstruct(const double                              gamma,
+                       const double                              alpha,
+                       const double                              zero,
+                       const int                                 gamma_segment,
+                       const int                                 alpha_segment,
+                       const int                                 zero_segment,
+                       const std::vector<double>::const_iterator controlParams) const;
 
-    double reconstructPol(const double  gamma,
-                          const double  alpha,
-                          const int     gamma_segment,
-                          const int     alpha_segment,
-                          const double* control_params) const;
+    double reconstructPol(const double                              gamma,
+                          const double                              alpha,
+                          const int                                 gamma_segment,
+                          const int                                 alpha_segment,
+                          const std::vector<double>::const_iterator controlParams) const;
 
     double interpolateElevation(double elevation,
                                 int    altitude,
@@ -266,7 +259,7 @@ private:
                                  int    alpha_segment,
                                  int    zero_segment) const;
 
-    const float* transmittanceCoefsIndex(const int turbidity, const int altitude, const int wavelength) const;
+    std::vector<float>::const_iterator transmittanceCoefsIndex(const int turbidity, const int altitude, const int wavelength) const;
 
     void transmittanceInterpolateWaveLength(const int    turbidity,
                                             const int    altitude,
