@@ -159,13 +159,6 @@ int unpackCoefsFromFloat(const std::vector<double>& breaks,
     return 2 * breaks.size() - 2;
 }
 
-void printErrorAndExit(const char* message) {
-    fprintf(stderr, "%s", message);
-    fprintf(stderr, "\n");
-    fflush(stderr);
-    exit(-1);
-}
-
 void PragueSkyModel::readRadiance(FILE* handle) {
     // Read metadata
 
@@ -185,88 +178,88 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     int visibilityCount = 0;
     valsRead            = fread(&visibilityCount, sizeof(int), 1, handle);
     if (valsRead != 1 || visibilityCount < 1)
-        printErrorAndExit("Error reading sky model data: visibilityCountRad");
+        throw DatasetReadException("visibilityCountRad");
 
     visibilitiesRad.resize(visibilityCount);
     valsRead = fread(visibilitiesRad.data(), sizeof(double), visibilityCount, handle);
     if (valsRead != visibilityCount)
-        printErrorAndExit("Error reading sky model data: visibilitesRad");
+        throw DatasetReadException("visibilitesRad");
 
     int albedoCount = 0;
     valsRead = fread(&albedoCount, sizeof(int), 1, handle);
     if (valsRead != 1 || albedoCount < 1)
-        printErrorAndExit("Error reading sky model data: albedoCountRad");
+        throw DatasetReadException("albedoCountRad");
 
     albedosRad.resize(albedoCount);
     valsRead    = fread(albedosRad.data(), sizeof(double), albedoCount, handle);
     if (valsRead != albedoCount)
-        printErrorAndExit("Error reading sky model data: albedosRad");
+        throw DatasetReadException("albedosRad");
 
     int altitudeCount = 0;
     valsRead = fread(&altitudeCount, sizeof(int), 1, handle);
     if (valsRead != 1 || altitudeCount < 1)
-        printErrorAndExit("Error reading sky model data: altitudeCountRad");
+        throw DatasetReadException("altitudeCountRad");
 
     altitudesRad.resize(altitudeCount);
     valsRead      = fread(altitudesRad.data(), sizeof(double), altitudeCount, handle);
     if (valsRead != altitudeCount)
-        printErrorAndExit("Error reading sky model data: altitudesRad");
+        throw DatasetReadException("altitudesRad");
 
     int elevationCount = 0;
     valsRead = fread(&elevationCount, sizeof(int), 1, handle);
     if (valsRead != 1 || elevationCount < 1)
-        printErrorAndExit("Error reading sky model data: elevationCountRad");
+        throw DatasetReadException(" elevationCountRad");
 
     elevationsRad.resize(elevationCount);
     valsRead       = fread(elevationsRad.data(), sizeof(double), elevationCount, handle);
     if (valsRead != elevationCount)
-        printErrorAndExit("Error reading sky model data: elevationsRad");
+        throw DatasetReadException("elevationsRad");
 
     valsRead = fread(&channels, sizeof(int), 1, handle);
     if (valsRead != 1 || channels < 1)
-        printErrorAndExit("Error reading sky model data: channels");
+        throw DatasetReadException("channels");
 
     valsRead = fread(&channelStart, sizeof(double), 1, handle);
     if (valsRead != 1 || channelStart < 0)
-        printErrorAndExit("Error reading sky model data: channelStart");
+        throw DatasetReadException("channelStart");
 
     valsRead = fread(&channelWidth, sizeof(double), 1, handle);
     if (valsRead != 1 || channelWidth <= 0)
-        printErrorAndExit("Error reading sky model data: channelWidth");
+        throw DatasetReadException("channelWidth");
 
     valsRead = fread(&rankRad, sizeof(int), 1, handle);
     if (valsRead != 1 || rankRad < 1)
-        printErrorAndExit("Error reading sky model data: rankRad");
+        throw DatasetReadException("rankRad");
 
     int sunBreaksCount = 0;
     valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || sunBreaksCount < 2)
-        printErrorAndExit("Error reading sky model data: sunBreaksCountRad");
+        throw DatasetReadException("sunBreaksCountRad");
 
     sunBreaksRad.resize(sunBreaksCount);
     valsRead   = fread(sunBreaksRad.data(), sizeof(double), sunBreaksCount, handle);
     if (valsRead != sunBreaksCount)
-        printErrorAndExit("Error reading sky model data: sunBreaksRad");
+        throw DatasetReadException("sunBreaksRad");
 
     int zenitBreaksCount = 0;
     valsRead = fread(&zenitBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || zenitBreaksCount < 2)
-        printErrorAndExit("Error reading sky model data: zenitBreaksCountRad");
+        throw DatasetReadException("zenitBreaksCountRad");
 
     zenithBreaksRad.resize(zenitBreaksCount);
     valsRead      = fread(zenithBreaksRad.data(), sizeof(double), zenitBreaksCount, handle);
     if (valsRead != zenitBreaksCount)
-        printErrorAndExit("Error reading sky model data: zenithBreaksRad");
+        throw DatasetReadException("zenithBreaksRad");
 
     int emphBreaksCount = 0;
     valsRead = fread(&emphBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || emphBreaksCount < 2)
-        printErrorAndExit("Error reading sky model data: emphBreaksCountRad");
+        throw DatasetReadException("emphBreaksCountRad");
 
     emphBreaksRad.resize(emphBreaksCount);
     valsRead    = fread(emphBreaksRad.data(), sizeof(double), emphBreaksCount, handle);
     if (valsRead != emphBreaksCount)
-        printErrorAndExit("Error reading sky model data: emphBreaksRad");
+        throw DatasetReadException("emphBreaksRad");
 
     // Calculate offsets and strides
 
@@ -300,23 +293,23 @@ void PragueSkyModel::readRadiance(FILE* handle) {
         for (int tc = 0; tc < rankRad; ++tc) {
             valsRead = fread(radianceTemp.data(), sizeof(unsigned short), sunBreaksRad.size(), handle);
             if (valsRead != sunBreaksRad.size())
-                printErrorAndExit("Error reading sky model data: sunCoefsRad");
+                throw DatasetReadException("sunCoefsRad");
             offset += unpackCoefsFromHalf(sunBreaksRad, radianceTemp, datasetRad, offset, 1.0);
 
             double zenithScale;
             valsRead = fread(&zenithScale, sizeof(double), 1, handle);
             if (valsRead != 1)
-                printErrorAndExit("Error reading sky model data: zenithScaleRad");
+                throw DatasetReadException("zenithScaleRad");
 
             valsRead = fread(radianceTemp.data(), sizeof(unsigned short), zenithBreaksRad.size(), handle);
             if (valsRead != zenithBreaksRad.size())
-                printErrorAndExit("Error reading sky model data: zenithCoefsRad");
+                throw DatasetReadException("zenithCoefsRad");
             offset += unpackCoefsFromHalf(zenithBreaksRad, radianceTemp, datasetRad, offset, zenithScale);
         }
 
         valsRead = fread(radianceTemp.data(), sizeof(unsigned short), emphBreaksRad.size(), handle);
         if (valsRead != emphBreaksRad.size())
-            printErrorAndExit("Error reading sky model data: emphCoefsRad");
+            throw DatasetReadException("emphCoefsRad");
         offset += unpackCoefsFromHalf(emphBreaksRad, radianceTemp, datasetRad, offset, 1.0);
     }
 }
@@ -328,35 +321,35 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
 
     valsRead = fread(&dDim, sizeof(int), 1, handle);
     if (valsRead != 1 || dDim < 1)
-        printErrorAndExit("Error reading sky model data: dDim");
+        throw DatasetReadException("dDim");
 
     valsRead = fread(&aDim, sizeof(int), 1, handle);
-    if (valsRead != 1 || aDim < 1)
-        printErrorAndExit("Error reading sky model data: aDim");
+	if (valsRead != 1 || aDim < 1)
+        throw DatasetReadException("aDim");
 
     int visibilitiesCount = 0;
     valsRead = fread(&visibilitiesCount, sizeof(int), 1, handle);
     if (valsRead != 1 || visibilitiesCount < 1)
-        printErrorAndExit("Error reading sky model data: visibilitiesCountTrans");
+        throw DatasetReadException("visibilitiesCountTrans");
 
     int altitudesCount = 0;
     valsRead = fread(&altitudesCount, sizeof(int), 1, handle);
     if (valsRead != 1 || altitudesCount < 1)
-        printErrorAndExit("Error reading sky model data: altitudesCountTrans");
+        throw DatasetReadException("altitudesCountTrans");
 
     valsRead = fread(&rankTrans, sizeof(int), 1, handle);
     if (valsRead != 1 || rankTrans < 1)
-        printErrorAndExit("Error reading sky model data: rankTrans");
+        throw DatasetReadException("rankTrans");
 
     altitudesTrans.resize(altitudesCount);
     valsRead               = fread(altitudesTrans.data(), sizeof(float), altitudesCount, handle);
     if (valsRead != altitudesCount)
-        printErrorAndExit("Error reading sky model data: altitudesTrans");
+        throw DatasetReadException("altitudesTrans");
 
     visibilitiesTrans.resize(visibilitiesCount);
     valsRead               = fread(visibilitiesTrans.data(), sizeof(float), visibilitiesCount, handle);
     if (valsRead != visibilitiesCount)
-        printErrorAndExit("Error reading sky model data: visibilitiesTrans");
+        throw DatasetReadException("visibilitiesTrans");
 
     const int totalCoefsU = dDim * aDim * rankTrans * altitudesTrans.size();
     const int totalCoefsV = visibilitiesTrans.size() * rankTrans * 11 * altitudesTrans.size();
@@ -366,12 +359,12 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
     datasetTransU.resize(totalCoefsU);
     valsRead               = fread(datasetTransU.data(), sizeof(float), totalCoefsU, handle);
     if (valsRead != totalCoefsU)
-        printErrorAndExit("Error reading sky model data: datasetTransU");
+        throw DatasetReadException("datasetTransU");
 
     datasetTransV.resize(totalCoefsV);
     valsRead               = fread(datasetTransV.data(), sizeof(float), totalCoefsV, handle);
     if (valsRead != totalCoefsV)
-        printErrorAndExit("Error reading sky model data: datasetTransV");
+        throw DatasetReadException("datasetTransV");
 }
 
 void PragueSkyModel::readPolarisation(FILE* handle) {
@@ -394,22 +387,22 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     int sunBreaksCount = 0;
     valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || sunBreaksCount < 1)
-        printErrorAndExit("Error reading sky model data: sunBreaksCountPol");
+        throw DatasetReadException("sunBreaksCountPol");
 
     sunBreaksPol.resize(sunBreaksCount);
     valsRead       = fread(sunBreaksPol.data(), sizeof(double), sunBreaksCount, handle);
     if (valsRead != sunBreaksCount)
-        printErrorAndExit("Error reading sky model data: sunBreaksPol");
+        throw DatasetReadException("sunBreaksPol");
 
     int zenithBreaksCount = 0;
     valsRead = fread(&zenithBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || zenithBreaksCount < 1)
-        printErrorAndExit("Error reading sky model data: zenithBreaksCountPol");
+        throw DatasetReadException("zenithBreaksCountPol");
 
     zenithBreaksPol.resize(zenithBreaksCount);
     valsRead          = fread(zenithBreaksPol.data(), sizeof(double), zenithBreaksCount, handle);
     if (valsRead != zenithBreaksCount)
-        printErrorAndExit("Error reading sky model data: zenithBreaksPol");
+        throw DatasetReadException("zenithBreaksPol");
 
     // Calculate offsets and strides
 
@@ -440,7 +433,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
         for (int tc = 0; tc < rankPol; ++tc) {
             valsRead = fread(polarisationTemp.data(), sizeof(float), sunBreaksPol.size(), handle);
             if (valsRead != sunBreaksPol.size())
-                printErrorAndExit("Error reading sky model data: sunCoefsPol");
+                throw DatasetReadException("sunCoefsPol");
             offset += unpackCoefsFromFloat(sunBreaksPol,
                                            polarisationTemp,
                                            datasetPol,
@@ -448,7 +441,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 
             valsRead = fread(polarisationTemp.data(), sizeof(float), zenithBreaksPol.size(), handle);
             if (valsRead != zenithBreaksPol.size())
-                printErrorAndExit("Error reading sky model data: zenithCoefsPol");
+                throw DatasetReadException("zenithCoefsPol");
             offset += unpackCoefsFromFloat(zenithBreaksPol,
                                            polarisationTemp,
                                            datasetPol,
@@ -461,15 +454,15 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 // Constructor
 ///////////////////////////////////////////////
 
-PragueSkyModel::PragueSkyModel(const char* filename) {
-    if (FILE* handle = fopen(filename, "rb")) {
+PragueSkyModel::PragueSkyModel(const std::string& filename) {
+    if (FILE* handle = fopen(filename.c_str(), "rb")) {
         // Read data
         readRadiance(handle);
         readTransmittance(handle);
         readPolarisation(handle);
         fclose(handle);
     } else {
-        printErrorAndExit("Sky model dataset not found");
+        throw DatasetNotFoundException(filename);
     }
 }
 
@@ -987,11 +980,6 @@ double PragueSkyModel::sunRadiance(const double theta,
                                    const double visibility,
                                    const double albedo,
                                    const double wavelength) const {
-    (void)gamma;
-    (void)shadow;
-    (void)zero;
-    (void)elevation;
-    (void)albedo;
     double idx         = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
     double sunRadiance = 0.0;
 

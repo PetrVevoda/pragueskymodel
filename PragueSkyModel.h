@@ -1,7 +1,31 @@
+#include <exception>
+#include <string>
 #include <vector>
 
 class PragueSkyModel {
 public:
+    class DatasetNotFoundException : public std::exception {
+    private:
+        const std::string message;
+
+    public:
+        DatasetNotFoundException(const std::string& filename)
+            : message(std::string("Dataset file ") + filename + std::string(" not found")) {}
+
+        virtual const char* what() const throw() { return message.c_str(); }
+    };
+
+    class DatasetReadException : public std::exception {
+    private:
+        const std::string message;
+
+    public:
+        DatasetReadException(const std::string& parameterName)
+            : message(std::string("Dataset reading failed at ") + parameterName) {}
+
+        virtual const char* what() const throw() { return message.c_str(); }
+    };
+
     class Vector3 {
     public:
         double x, y, z;
@@ -98,7 +122,7 @@ private:
     std::vector<double> datasetPol;
 
 public:
-    PragueSkyModel(const char* filename);
+    PragueSkyModel(const std::string& filename);
 
     //   This computes the canonical angles of the model from
     //   a normalised view vector and solar elevation.

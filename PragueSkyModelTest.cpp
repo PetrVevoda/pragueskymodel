@@ -289,6 +289,7 @@ int main(int argc, char* argv[]) {
         std::cout << "   -alb ... ground albedo, valid range [0, 1], default 0.5\n";
         std::cout << "   -alt ... observer altitude, valid range [0, 15000] meters, default 0 meters\n";
         std::cout << "   -azi ... solar azimuth, valid range [0, 360] degrees, default 0 degrees\n";
+        std::cout << "   -dat ... path to the dataset, default \".\\PragueSkyModelDataset.dat\"\n";
         std::cout << "   -ele ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees\n";
         std::cout << "   -mod ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for "
                      "polarisation and 3 for transmittance, default 0\n";
@@ -298,9 +299,11 @@ int main(int argc, char* argv[]) {
                      "kilometers\n";
         return 1;
     }
-    const double      albedo     = getDoubleCmdOption(argv, argv + argc, "-alb", 0.5);
-    const double      altitude   = getDoubleCmdOption(argv, argv + argc, "-alt", 0.0);
-    const double      azimuth    = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
+    const double      albedo   = getDoubleCmdOption(argv, argv + argc, "-alb", 0.5);
+    const double      altitude = getDoubleCmdOption(argv, argv + argc, "-alt", 0.0);
+    const double      azimuth  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
+    const std::string datasetFile =
+        getStringCmdOption(argv, argv + argc, "-dat", "PragueSkyModelDataset.dat");
     const double      elevation  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-ele", 0.0));
     const int         mode       = getIntCmdOption(argv, argv + argc, "-mod", 0);
     const std::string outputFile = getStringCmdOption(argv, argv + argc, "-out", "test.exr");
@@ -312,84 +315,91 @@ int main(int argc, char* argv[]) {
     Spectrum spectrum;
     float*   result = new float[resolution * resolution * 3];
 
-    PragueSkyModel skyModel = PragueSkyModel("PragueSkyModelDataset.dat");
+    try {
+        PragueSkyModel skyModel = PragueSkyModel(datasetFile);
 
-    for (int x = 0; x < resolution; x++) {
-        for (int y = 0; y < resolution; y++) {
-            const Vector3 viewDir = pixelToDirection(x, y, resolution);
-            if (viewDir.isZero()) {
-				result[(x * resolution + y) * 3] = 0.0;
-                result[(x * resolution + y) * 3 + 1] = 0.0;
-				result[(x * resolution + y) * 3 + 2] = 0.0;
-                continue;
-            }
-
-            double solarElevationAtViewpoint, altitudeOfViewpoint, theta, gamma, shadow, zero;
-            skyModel.computeAngles(viewPoint,
-                                   viewDir,
-                                   elevation,
-                                   azimuth,
-                                   &solarElevationAtViewpoint,
-                                   &altitudeOfViewpoint,
-                                   &theta,
-                                   &gamma,
-                                   &shadow,
-                                   &zero);
-
-            for (int wl = 0; wl < 11; wl++) {
-                switch (mode) {
-                case 1:
-                    spectrum[wl] = skyModel.sunRadiance(theta,
-                                                        gamma,
-                                                        shadow,
-                                                        zero,
-                                                        solarElevationAtViewpoint,
-                                                        altitudeOfViewpoint,
-                                                        visibility,
-                                                        albedo,
-                                                        wavelengths[wl]);
-                    break;
-                case 2:
-                    spectrum[wl] = std::abs(skyModel.polarisation(theta,
-                                                                  gamma,
-                                                                  solarElevationAtViewpoint,
-                                                                  altitudeOfViewpoint,
-                                                                  visibility,
-                                                                  albedo,
-                                                                  wavelengths[wl]));
-                    break;
-                case 3:
-                    spectrum[wl] = skyModel.transmittance(theta,
-                                                          altitudeOfViewpoint,
-                                                          visibility,
-                                                          wavelengths[wl],
-                                                          std::numeric_limits<double>::max());
-                    break;
-                default:
-                    spectrum[wl] = skyModel.skyRadiance(theta,
-                                                        gamma,
-                                                        shadow,
-                                                        zero,
-                                                        solarElevationAtViewpoint,
-                                                        altitudeOfViewpoint,
-                                                        visibility,
-                                                        albedo,
-                                                        wavelengths[wl]);
-                    break;
+        for (int x = 0; x < resolution; x++) {
+            for (int y = 0; y < resolution; y++) {
+                const Vector3 viewDir = pixelToDirection(x, y, resolution);
+                if (viewDir.isZero()) {
+                    result[(x * resolution + y) * 3] = 0.0;
+                    result[(x * resolution + y) * 3 + 1] = 0.0;
+                    result[(x * resolution + y) * 3 + 2] = 0.0;
+                    continue;
                 }
+
+                double solarElevationAtViewpoint, altitudeOfViewpoint, theta, gamma, shadow, zero;
+                skyModel.computeAngles(viewPoint,
+                    viewDir,
+                    elevation,
+                    azimuth,
+                    &solarElevationAtViewpoint,
+                    &altitudeOfViewpoint,
+                    &theta,
+                    &gamma,
+                    &shadow,
+                    &zero);
+
+                for (int wl = 0; wl < 11; wl++) {
+                    switch (mode) {
+                    case 1:
+                        spectrum[wl] = skyModel.sunRadiance(theta,
+                            gamma,
+                            shadow,
+                            zero,
+                            solarElevationAtViewpoint,
+                            altitudeOfViewpoint,
+                            visibility,
+                            albedo,
+                            wavelengths[wl]);
+                        break;
+                    case 2:
+                        spectrum[wl] = std::abs(skyModel.polarisation(theta,
+                            gamma,
+                            solarElevationAtViewpoint,
+                            altitudeOfViewpoint,
+                            visibility,
+                            albedo,
+                            wavelengths[wl]));
+                        break;
+                    case 3:
+                        spectrum[wl] = skyModel.transmittance(theta,
+                            altitudeOfViewpoint,
+                            visibility,
+                            wavelengths[wl],
+                            std::numeric_limits<double>::max());
+                        break;
+                    default:
+                        spectrum[wl] = skyModel.skyRadiance(theta,
+                            gamma,
+                            shadow,
+                            zero,
+                            solarElevationAtViewpoint,
+                            altitudeOfViewpoint,
+                            visibility,
+                            albedo,
+                            wavelengths[wl]);
+                        break;
+                    }
+                }
+
+                const Vector3 rgb = spectrumToRGB(spectrum);
+                result[(x * resolution + y) * 3] = rgb.x;
+                result[(x * resolution + y) * 3 + 1] = rgb.y;
+                result[(x * resolution + y) * 3 + 2] = rgb.z;
             }
-
-            const Vector3 rgb                    = spectrumToRGB(spectrum);
-            result[(x * resolution + y) * 3]     = rgb.x;
-            result[(x * resolution + y) * 3 + 1] = rgb.y;
-            result[(x * resolution + y) * 3 + 2] = rgb.z;
         }
-    }
 
-    saveEXR(result, resolution, resolution, outputFile);
+        saveEXR(result, resolution, resolution, outputFile);
+		delete[] result;
 
-    delete[] result;
+		std::cout << "Done\n";
+		return 0;
+	}
+	catch (std::exception& e) {
+        delete[] result;
 
-    std::cout << "Done\n";
-    return 0;
+		std::cout << "Error: " << e.what() << "\n";
+        return 1;
+	}
 }
