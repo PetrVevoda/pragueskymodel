@@ -316,7 +316,13 @@ int main(int argc, char* argv[]) {
 
     for (int x = 0; x < resolution; x++) {
         for (int y = 0; y < resolution; y++) {
-            Vector3 viewDir = pixelToDirection(x, y, resolution);
+            const Vector3 viewDir = pixelToDirection(x, y, resolution);
+            if (viewDir.isZero()) {
+				result[(x * resolution + y) * 3] = 0.0;
+                result[(x * resolution + y) * 3 + 1] = 0.0;
+				result[(x * resolution + y) * 3 + 2] = 0.0;
+                continue;
+            }
 
             double solarElevationAtViewpoint, altitudeOfViewpoint, theta, gamma, shadow, zero;
             skyModel.computeAngles(viewPoint,
