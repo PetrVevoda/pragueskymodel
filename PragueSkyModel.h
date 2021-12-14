@@ -98,7 +98,7 @@ private:
     std::vector<double> datasetPol;
 
 public:
-    PragueSkyModel(const char* library_path);
+    PragueSkyModel(const char* filename);
 
     //   This computes the canonical angles of the model from
     //   a normalised view vector and solar elevation.
@@ -124,7 +124,7 @@ public:
                        const double zero,
                        const double elevation,
                        const double altitude,
-                       const double turbidity,
+                       const double visibility,
                        const double albedo,
                        const double wavelength) const;
 
@@ -144,7 +144,7 @@ public:
                        const double zero,
                        const double elevation,
                        const double altitude,
-                       const double turbidity,
+                       const double visibility,
                        const double albedo,
                        const double wavelength) const;
 
@@ -152,7 +152,7 @@ public:
                         const double gamma,
                         const double elevation,
                         const double altitude,
-                        const double turbidity,
+                        const double visibility,
                         const double albedo,
                         const double wavelength) const;
 
@@ -168,7 +168,7 @@ public:
   */
     double transmittance(const double theta,
                          const double altitude,
-                         const double turbidity,
+                         const double visibility,
                          const double wavelength,
                          const double distance) const;
 
@@ -181,162 +181,162 @@ private:
                                 const int     totalCoefsSingleConfig,
                                 const int     elevation,
                                 const int     altitude,
-                                const int     turbidity,
+                                const int     visibility,
                                 const int     albedo,
                                 const int     wavelength) const;
 
     double reconstruct(const double                              gamma,
                        const double                              alpha,
                        const double                              zero,
-                       const int                                 gamma_segment,
-                       const int                                 alpha_segment,
-                       const int                                 zero_segment,
+                       const int                                 gammaSegment,
+                       const int                                 alphaSegment,
+                       const int                                 zeroSegment,
                        const std::vector<double>::const_iterator controlParams) const;
 
     double reconstructPol(const double                              gamma,
                           const double                              alpha,
-                          const int                                 gamma_segment,
-                          const int                                 alpha_segment,
+                          const int                                 gammaSegment,
+                          const int                                 alphaSegment,
                           const std::vector<double>::const_iterator controlParams) const;
 
     double interpolateElevation(double elevation,
                                 int    altitude,
-                                int    turbidity,
+                                int    visibility,
                                 int    albedo,
                                 int    wavelength,
                                 double gamma,
                                 double alpha,
                                 double zero,
-                                int    gamma_segment,
-                                int    alpha_segment,
-                                int    zero_segment) const;
+                                int    gammaSegment,
+                                int    alphaSegment,
+                                int    zeroSegment) const;
 
     double interpolateAltitude(double elevation,
                                double altitude,
-                               int    turbidity,
+                               int    visibility,
                                int    albedo,
                                int    wavelength,
                                double gamma,
                                double alpha,
                                double zero,
-                               int    gamma_segment,
-                               int    alpha_segment,
-                               int    zero_segment) const;
+                               int    gammaSegment,
+                               int    alphaSegment,
+                               int    zeroSegment) const;
 
     double interpolateVisibility(double elevation,
                                  double altitude,
-                                 double turbidity,
+                                 double visibility,
                                  int    albedo,
                                  int    wavelength,
                                  double gamma,
                                  double alpha,
                                  double zero,
-                                 int    gamma_segment,
-                                 int    alpha_segment,
-                                 int    zero_segment) const;
+                                 int    gammaSegment,
+                                 int    alphaSegment,
+                                 int    zeroSegment) const;
 
     double interpolateAlbedo(double elevation,
                              double altitude,
-                             double turbidity,
+                             double visibility,
                              double albedo,
                              int    wavelength,
                              double gamma,
                              double alpha,
                              double zero,
-                             int    gamma_segment,
-                             int    alpha_segment,
-                             int    zero_segment) const;
+                             int    gammaSegment,
+                             int    alphaSegment,
+                             int    zeroSegment) const;
 
     double interpolateWavelength(double elevation,
                                  double altitude,
-                                 double turbidity,
+                                 double visibility,
                                  double albedo,
                                  double wavelength,
                                  double gamma,
                                  double alpha,
                                  double zero,
-                                 int    gamma_segment,
-                                 int    alpha_segment,
-                                 int    zero_segment) const;
+                                 int    gammaSegment,
+                                 int    alphaSegment,
+                                 int    zeroSegment) const;
 
-    std::vector<float>::const_iterator transmittanceCoefsIndex(const int turbidity, const int altitude, const int wavelength) const;
+    std::vector<float>::const_iterator transmittanceCoefsIndex(const int visibility, const int altitude, const int wavelength) const;
 
-    void transmittanceInterpolateWaveLength(const int    turbidity,
+    void transmittanceInterpolateWaveLength(const int    visibility,
                                             const int    altitude,
-                                            const int    wavelength_low,
-                                            const int    wavelength_inc,
-                                            const double wavelength_w,
+                                            const int    wavelengthLow,
+                                            const int    wavelengthInc,
+                                            const double wavelengthW,
                                             double*      coefficients) const;
 
-    double calcTransmittanceSVDAltitude(const int    turbidity,
+    double calcTransmittanceSVDAltitude(const int    visibility,
                                         const int    altitude,
-                                        const int    wavelength_low,
-                                        const int    wavelength_inc,
-                                        const double wavelength_factor,
-                                        const int    a_int,
-                                        const int    d_int,
-                                        const int    a_inc,
-                                        const int    d_inc,
+                                        const int    wavelengthLow,
+                                        const int    wavelengthInc,
+                                        const double wavelengthFactor,
+                                        const int    aInt,
+                                        const int    dInt,
+                                        const int    aInc,
+                                        const int    dInc,
                                         const double wa,
                                         const double wd) const;
 
     double calcTransmittanceSVD(const double a,
                                 const double d,
-                                const int    turbidity,
-                                const int    wavelength_low,
-                                const int    wavelength_inc,
-                                const double wavelength_factor,
-                                const int    altitude_low,
-                                const int    altitude_inc,
-                                const double altitude_factor) const;
+                                const int    visibility,
+                                const int    wavelengthLow,
+                                const int    wavelengthInc,
+                                const double wavelengthFactor,
+                                const int    altitudeLow,
+                                const int    altitudeInc,
+                                const double altitudeFactor) const;
 
     double interpolateElevationPol(double elevation,
                                    int    altitude,
-                                   int    turbidity,
+                                   int    visibility,
                                    int    albedo,
                                    int    wavelength,
                                    double gamma,
                                    double alpha,
-                                   int    gamma_segment,
-                                   int    alpha_segment) const;
+                                   int    gammaSegment,
+                                   int    alphaSegment) const;
 
     double interpolateAltitudePol(double elevation,
                                   double altitude,
-                                  int    turbidity,
+                                  int    visibility,
                                   int    albedo,
                                   int    wavelength,
                                   double gamma,
                                   double alpha,
-                                  int    gamma_segment,
-                                  int    alpha_segment) const;
+                                  int    gammaSegment,
+                                  int    alphaSegment) const;
 
     double interpolateVisibilityPol(double elevation,
                                     double altitude,
-                                    double turbidity,
+                                    double visibility,
                                     int    albedo,
                                     int    wavelength,
                                     double gamma,
                                     double alpha,
-                                    int    gamma_segment,
-                                    int    alpha_segment) const;
+                                    int    gammaSegment,
+                                    int    alphaSegment) const;
 
     double interpolateAlbedoPol(double elevation,
                                 double altitude,
-                                double turbidity,
+                                double visibility,
                                 double albedo,
                                 int    wavelength,
                                 double gamma,
                                 double alpha,
-                                int    gamma_segment,
-                                int    alpha_segment) const;
+                                int    gammaSegment,
+                                int    alphaSegment) const;
 
     double interpolateWavelengthPol(double elevation,
                                     double altitude,
-                                    double turbidity,
+                                    double visibility,
                                     double albedo,
                                     double wavelength,
                                     double gamma,
                                     double alpha,
-                                    int    gamma_segment,
-                                    int    alpha_segment) const;
+                                    int    gammaSegment,
+                                    int    alphaSegment) const;
 };

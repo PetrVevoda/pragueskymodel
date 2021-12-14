@@ -182,14 +182,14 @@ void PragueSkyModel::readRadiance(FILE* handle) {
 
     int valsRead;
 
-    int turbidityCount = 0;
-    valsRead            = fread(&turbidityCount, sizeof(int), 1, handle);
-    if (valsRead != 1 || turbidityCount < 1)
-        printErrorAndExit("Error reading sky model data: turbidityCountRad");
+    int visibilityCount = 0;
+    valsRead            = fread(&visibilityCount, sizeof(int), 1, handle);
+    if (valsRead != 1 || visibilityCount < 1)
+        printErrorAndExit("Error reading sky model data: visibilityCountRad");
 
-    visibilitiesRad.resize(turbidityCount);
-    valsRead = fread(visibilitiesRad.data(), sizeof(double), turbidityCount, handle);
-    if (valsRead != turbidityCount)
+    visibilitiesRad.resize(visibilityCount);
+    valsRead = fread(visibilitiesRad.data(), sizeof(double), visibilityCount, handle);
+    if (valsRead != visibilityCount)
         printErrorAndExit("Error reading sky model data: visibilitesRad");
 
     int albedoCount = 0;
@@ -458,7 +458,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 }
 
 ///////////////////////////////////////////////
-// Constructor & destructor
+// Constructor
 ///////////////////////////////////////////////
 
 PragueSkyModel::PragueSkyModel(const char* filename) {
@@ -579,11 +579,11 @@ void PragueSkyModel::computeAngles(const Vector3& viewpoint,
 
     const double effectiveElevation = groundLevelSolarElevationAtOrigin;
     const double effectiveAzimuth   = groundLevelSolarAzimuthAtOrigin;
-    const double shadow_angle       = effectiveElevation + PI * 0.5;
+    const double shadowAngle       = effectiveElevation + PI * 0.5;
 
-    Vector3 shadowDirectionN = Vector3(cos(shadow_angle) * cos(effectiveAzimuth),
-                                       cos(shadow_angle) * sin(effectiveAzimuth),
-                                       sin(shadow_angle));
+    Vector3 shadowDirectionN = Vector3(cos(shadowAngle) * cos(effectiveAzimuth),
+                                       cos(shadowAngle) * sin(effectiveAzimuth),
+                                       sin(shadowAngle));
 
     const double dotProductShadow = dot(correctViewN, shadowDirectionN);
 
@@ -1074,9 +1074,9 @@ void toAD(double theta, double distance, double altitude, double* a, double* d) 
             if (n <= distance) // We do intersect the planet so return a and d at the
                                // surface
             {
-                double x_p = xV * n;
-                double y_p = (yV * n) + PLANET_RADIUS + altitude;
-                scaleAD(x_p, y_p, a, d);
+                const double xP = xV * n;
+                const double yP = (yV * n) + PLANET_RADIUS + altitude;
+                scaleAD(xP, yP, a, d);
                 return;
             }
         }
