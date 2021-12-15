@@ -26,6 +26,16 @@ public:
         virtual const char* what() const throw() { return message.c_str(); }
     };
 
+	class NoPolarisationException : public std::exception {
+	private:
+		const std::string message;
+
+	public:
+        NoPolarisationException() : message(std::string("The supplied dataset does not contain polarisation data")) {}
+
+		virtual const char* what() const throw() { return message.c_str(); }
+	};
+
     class Vector3 {
     public:
         double x, y, z;

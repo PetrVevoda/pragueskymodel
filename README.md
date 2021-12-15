@@ -27,7 +27,7 @@ C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atm
             - contains polarisation and entire range of ground albedos, observer altitudes, solar elevations, and visibilities as presented in the paper
         - [Ground-level version (102 MB)](https://drive.google.com/file/d/1Gk6OSHGpFx8HM3drHWykb3lDrtZXO4h7/view?usp=sharing)
             - contains all ground albedos, solar elevations, and visibilities, but only a single (zero) observer altitude, does not contain polarisation
-3. Run `PragueSkyModel.exe -dat <path_to_the_dataset>`
+3. Initialize oneAPI environment and run `PragueSkyModel.exe -dat <path_to_the_dataset>`
     - this will render a default configuration
     - use option `-h` or `--help` to display this list of available options:
         - `-alb` ... ground albedo, valid range [0, 1], default 0.5

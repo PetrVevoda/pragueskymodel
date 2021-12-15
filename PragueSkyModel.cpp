@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include "PragueSkyModel.h"
@@ -962,6 +963,10 @@ double PragueSkyModel::skyRadiance(const Parameters& params, const double wavele
 ///////////////////////////////////////////////
 
 double PragueSkyModel::sunRadiance(const Parameters& params, const double wavelength) const {
+    if (params.gamma > SUN_RADIUS) {
+        return 0.0;
+    }
+
     double idx         = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
     double sunRadiance = 0.0;
 
@@ -1436,7 +1441,7 @@ double PragueSkyModel::interpolateWavelengthPol(double elevation,
 double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
     // If no polarisation data available
     if (rankPol == 0) {
-        return 0.0;
+        throw NoPolarisationException();
     }
 
     // Translate parameter values to indices
