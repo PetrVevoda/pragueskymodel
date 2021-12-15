@@ -5,9 +5,9 @@
 #include <limits>
 #include "PragueSkyModel.h"
 
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 // Constants
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 constexpr double PI              = 3.141592653589793;
 constexpr double PLANET_RADIUS   = 6378000.0;
@@ -68,9 +68,11 @@ constexpr double SUN_RAD_TABLE[] = {
 };
 constexpr int SVD_RANK = 12;
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Conversion functions
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 double radiansToDegrees(const double radians) {
     return radians * 180.0 / PI;
@@ -95,9 +97,11 @@ double doubleFromHalf(const uint16 half) {
     return out;
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Vector3 operations
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 float dot(const PragueSkyModel::Vector3& v1, const PragueSkyModel::Vector3& v2) {
     return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
@@ -111,9 +115,11 @@ PragueSkyModel::Vector3 normalize(const PragueSkyModel::Vector3& vector) {
     return vector / magnitude(vector);
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Helper functions
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 double lerp(const double from, const double to, const double factor) {
     return (1.0 - factor) * from + factor * to;
@@ -129,9 +135,11 @@ double clamp01(const double x) {
     return (x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x));
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Data reading
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 int unpackCoefsFromHalf(const std::vector<double>& breaks,
                         const std::vector<uint16>& values,
@@ -451,9 +459,11 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     }
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Constructor
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 PragueSkyModel::PragueSkyModel(const std::string& filename) {
     if (FILE* handle = fopen(filename.c_str(), "rb")) {
@@ -467,9 +477,11 @@ PragueSkyModel::PragueSkyModel(const std::string& filename) {
     }
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Angles
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 void computeAltitudeAndElevation(const PragueSkyModel::Vector3& viewpoint,
                                  const double                   groundLevelSolarElevationAtOrigin,
@@ -488,7 +500,7 @@ void computeAltitudeAndElevation(const PragueSkyModel::Vector3& viewpoint,
     // Altitude of viewpoint
 
     distanceToView = magnitude(directionToZenith);
-    // ASSERT_DOUBLE_LARGER_THAN(*distanceToView, -0.0001);
+    assert(distanceToView > -0.0001);
     distanceToView = std::max(distanceToView, 0.0);
 
     altitudeOfViewpoint = distanceToView - PLANET_RADIUS;
@@ -514,8 +526,10 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
                                                              const double   groundLevelSolarAzimuthAtOrigin,
                                                              const double   visibility,
                                                              const double   albedo) const {
-    // ASSERT_VALID_DOUBLE(groundLevelSolarElevationAtOrigin);
-    // ASSERT_VALID_DOUBLE(groundLevelSolarAzimuthAtOrigin);
+    assert(viewpoint.z >= 0.0);
+    assert(magnitude(viewDirection) > 0.0);
+    assert(visibility >= 0.0);
+    assert(albedo >= 0.0 && albedo <= 1.0);
 
     Parameters params;
     params.visibility = visibility;
@@ -595,24 +609,27 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
     return params;
 }
 
-///////////////////////////////////////////////
-// Parameters
-///////////////////////////////////////////////
 
-void findInArray(const std::vector<float>& arr, const double value, int* index, int* inc, double* w) {
-    *inc = 0.0;
+
+/////////////////////////////////////////////////////////////////////////////////////
+// Parameters
+/////////////////////////////////////////////////////////////////////////////////////
+
+void findInArray(const std::vector<float>& arr, const double value, int& index, int& inc, double& w) {
+    inc = 0.0;
     if (value <= arr.front()) {
-        *index = 0.0;
-        *w     = 1.0;
+        index = 0.0;
+        w     = 1.0;
     } else if (value >= arr.back()) {
-        *index = arr.size() - 1;
-        *w     = 0.0;
+        index = arr.size() - 1;
+        w     = 0.0;
     } else {
         for (int i = 1; i < arr.size(); i++) {
             if (value < arr[i]) {
-                *index = i - 1;
-                *inc   = 1;
-                *w     = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
+                index = i - 1;
+                inc   = 1;
+                w     = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
+                assert(w >= 0.0 && w <= 1.0);
                 return;
             }
         }
@@ -712,9 +729,11 @@ double PragueSkyModel::reconstructPol(const double                              
     return res;
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Sky radiance
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::interpolateElevation(double elevation,
                                             int    altitude,
@@ -921,6 +940,8 @@ double PragueSkyModel::interpolateWavelength(double elevation,
 }
 
 double PragueSkyModel::skyRadiance(const Parameters& params, const double wavelength) const {
+    assert(wavelength > 0);
+
     // Translate parameter values to indices
 
     const double visibilityControl = mapParameter(params.visibility, visibilitiesRad);
@@ -953,16 +974,19 @@ double PragueSkyModel::skyRadiance(const Parameters& params, const double wavele
                                              alphaSegment,
                                              zeroSegment);
 
-    // ASSERT_NONNEGATIVE_DOUBLE(res);
-
+    assert(res >= 0.0);
     return res;
 }
 
-///////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////
 // Sun radiance
-///////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::sunRadiance(const Parameters& params, const double wavelength) const {
+    assert(wavelength > 0);
+
     if (params.gamma > SUN_RADIUS) {
         return 0.0;
     }
@@ -975,20 +999,22 @@ double PragueSkyModel::sunRadiance(const Parameters& params, const double wavele
         double idxFloat = idx - floor(idx);
 
         sunRadiance = SUN_RAD_TABLE[lowIdx] * (1.0 - idxFloat) + SUN_RAD_TABLE[lowIdx + 1] * idxFloat;
-        // ASSERT_POSITIVE_DOUBLE(sunRadiance);
+        assert(sunRadiance > 0.0);
     }
 
     double tau = PragueSkyModel::transmittance(params, wavelength, std::numeric_limits<double>::max());
-    // ASSERT_UNIT_RANGE_DOUBLE(tau);
+    assert(tau >= 0.0 && tau <= 1.0);
 
     return sunRadiance * tau;
 }
 
-///////////////////////////////////////////////
-// Transmittance
-///////////////////////////////////////////////
 
-bool circleBounds2D(double xV, double yV, double yC, double radius, double* d) {
+
+/////////////////////////////////////////////////////////////////////////////////////
+// Transmittance
+/////////////////////////////////////////////////////////////////////////////////////
+
+bool circleBounds2D(double xV, double yV, double yC, double radius, double& d) {
     const double qa = (xV * xV) + (yV * yV);
     const double qb = 2.0 * yC * yV;
     const double qc = (yC * yC) - (radius * radius);
@@ -999,25 +1025,27 @@ bool circleBounds2D(double xV, double yV, double yC, double radius, double* d) {
     n  = sqrt(n);
     const float d1 = (-qb + n) / (2.0 * qa);
     const float d2 = (-qb - n) / (2.0 * qa);
-    *d = (d1 > 0 && d2 > 0) ? (d1 < d2 ? d1 : d2) : (d1 > d2 ? d1 : d2);
-    if (*d <= 0) {
+    d = (d1 > 0 && d2 > 0) ? (d1 < d2 ? d1 : d2) : (d1 > d2 ? d1 : d2);
+    if (d <= 0) {
         return false;
     }
     return true;
 }
 
-void scaleAD(double xP, double yP, double* a, double* d) {
+void scaleAD(double xP, double yP, double& a, double& d) {
     const double n = sqrt((xP * xP) + (yP * yP));
-    *a = n - PLANET_RADIUS;
-    *a = *a > 0.0 ? *a : 0.0;
-    *a = pow(*a / 100000.0, 1.0 / 3.0);
-    *d = acos(yP / n) * PLANET_RADIUS;
-    *d = *d / DIST_TO_EDGE;
-    *d = pow(*d, 0.25);
-    *d = *d > 1.0 ? 1.0 : *d;
+    a = n - PLANET_RADIUS;
+    a = a > 0.0 ? a : 0.0;
+    a = pow(a / 100000.0, 1.0 / 3.0);
+    d = acos(yP / n) * PLANET_RADIUS;
+    d = d / DIST_TO_EDGE;
+    d = pow(d, 0.25);
+    d = d > 1.0 ? 1.0 : d;
+	assert(a >= 0.0);
+	assert(d >= 0.0);
 }
 
-void toAD(double theta, double distance, double altitude, double* a, double* d) {
+void toAD(double theta, double distance, double altitude, double& a, double& d) {
     // Ray circle intersection
     double xV       = sin(theta);
     double yV       = cos(theta);
@@ -1028,19 +1056,19 @@ void toAD(double theta, double distance, double altitude, double* a, double* d) 
                           // intersections on the other side of the planet
     {
         if (theta <= 0.5 * PI) {
-            if (!circleBounds2D(xV, yV, yC, atmoEdge, &n)) {
+            if (!circleBounds2D(xV, yV, yC, atmoEdge, n)) {
                 // Then we have a problem!
                 // Return something, but this should never happen so long as the camera
                 // is inside the atmosphere Which it should be in this work
-                *a = 0;
-                *d = 0;
+                a = 0;
+                d = 0;
                 return;
             }
         } else {
             n = 0;
         }
     } else {
-        if (circleBounds2D(xV, yV, yC, PLANET_RADIUS, &n)) // Check for planet intersection
+        if (circleBounds2D(xV, yV, yC, PLANET_RADIUS, n)) // Check for planet intersection
         {
             if (n <= distance) // We do intersect the planet so return a and d at the
                                // surface
@@ -1051,12 +1079,12 @@ void toAD(double theta, double distance, double altitude, double* a, double* d) 
                 return;
             }
         }
-        if (!circleBounds2D(xV, yV, yC, atmoEdge, &n)) {
+        if (!circleBounds2D(xV, yV, yC, atmoEdge, n)) {
             // Then we have a problem!
             // Return something, but this should never happen so long as the camera is
             // inside the atmosphere Which it should be in this work
-            *a = 0;
-            *d = 0;
+            a = 0;
+            d = 0;
             return;
         }
     }
@@ -1195,13 +1223,10 @@ double PragueSkyModel::calcTransmittanceSVD(const double a,
 }
 
 double PragueSkyModel::transmittance(const Parameters& params,
-                                     const double wavelength,
-                                     const double distance) const {
-    /*ASSERT_DOUBLE_WITHIN_RANGE(theta, 0.0, PI);
-    ASSERT_DOUBLE_WITHIN_RANGE(altitude, 0.0, 15000.0);
-    ASSERT_NONNEGATIVE_DOUBLE(visibility);
-    ASSERT_POSITIVE_DOUBLE(wavelength);
-    ASSERT_POSITIVE_DOUBLE(distance);*/
+                                     const double      wavelength,
+                                     const double      distance) const {
+    assert(wavelength > 0);
+    assert(distance > 0);
 
     const double wavelengthNorm = (wavelength - channelStart) / channelWidth;
     if (wavelengthNorm >= channels || wavelengthNorm < 0.)
@@ -1209,41 +1234,37 @@ double PragueSkyModel::transmittance(const Parameters& params,
     const int    wavelengthLow    = (int)wavelengthNorm;
     const double wavelengthFactor = 0.0;
     const int    wavelengthInc    = wavelengthLow < 10 ? 1 : 0;
-    /*ASSERT_INTEGER_WITHIN_RANGE(wavelengthLow, 0, 10);
-    ASSERT_DOUBLE_WITHIN_RANGE(wavelengthFactor, 0.0, 1.0);
-    ASSERT_INTEGER_WITHIN_RANGE(wavelengthInc, 0, 1);*/
 
     int    altitudeLow;
     double altitudeFactor;
     int    altitudeInc;
-    findInArray(altitudesTrans,
-        params.altitude,
-                &altitudeLow,
-                &altitudeInc,
-                &altitudeFactor);
-    /*ASSERT_INTEGER_WITHIN_RANGE(altitudeLow, 0, 21);
-  ASSERT_DOUBLE_WITHIN_RANGE(altitudeFactor, 0.0, 1.0);
-  ASSERT_INTEGER_WITHIN_RANGE(altitudeInc, 0, 1);*/
+    findInArray(altitudesTrans, params.altitude, altitudeLow, altitudeInc, altitudeFactor);
 
     int    visibilityLow;
     double visibilityW;
     int    visibilityInc;
-    findInArray(visibilitiesTrans, params.visibility, &visibilityLow, &visibilityInc, &visibilityW);
-    /*ASSERT_INTEGER_WITHIN_RANGE(visibilityLow, 0, 2);
-  ASSERT_DOUBLE_WITHIN_RANGE(visibilityW, 0.0, 1.0);
-  ASSERT_INTEGER_WITHIN_RANGE(visibilityInc, 0, 1);*/
+    findInArray(visibilitiesTrans, params.visibility, visibilityLow, visibilityInc, visibilityW);
 
     // Calculate normalized and non-linearly scaled position in the atmosphere
     double a;
     double d;
-    toAD(params.theta, distance, params.altitude, &a, &d);
-    /*ASSERT_NONNEGATIVE_DOUBLE(a);
-    ASSERT_NONNEGATIVE_DOUBLE(d);*/
+    toAD(params.theta, distance, params.altitude, a, d);
 
     // Evaluate basis at low visibility
     double transLow = calcTransmittanceSVD(a,
+                                           d,
+                                           visibilityLow,
+                                           wavelengthLow,
+                                           wavelengthInc,
+                                           wavelengthFactor,
+                                           altitudeLow,
+                                           altitudeInc,
+                                           altitudeFactor);
+
+    // Evaluate basis at high visibility
+    double transHigh = calcTransmittanceSVD(a,
                                             d,
-                                            visibilityLow,
+                                            visibilityLow + visibilityInc,
                                             wavelengthLow,
                                             wavelengthInc,
                                             wavelengthFactor,
@@ -1251,31 +1272,19 @@ double PragueSkyModel::transmittance(const Parameters& params,
                                             altitudeInc,
                                             altitudeFactor);
 
-    // Evaluate basis at high visibility
-    double transHigh = calcTransmittanceSVD(a,
-                                             d,
-                                             visibilityLow + visibilityInc,
-                                             wavelengthLow,
-                                             wavelengthInc,
-                                             wavelengthFactor,
-                                             altitudeLow,
-                                             altitudeInc,
-                                             altitudeFactor);
-
     // Return interpolated transmittance values
     double trans = lerp(transLow, transHigh, visibilityW);
-    // ASSERT_VALID_DOUBLE(trans);
+    trans        = clamp01(trans);
+    trans        = trans * trans;
 
-    trans = clamp01(trans);
-    trans = trans * trans;
-    // ASSERT_UNIT_RANGE_DOUBLE(trans);
-
+    assert(trans >= 0.0 && trans <= 1.0);
     return trans;
 }
 
-///////////////////////////////////////////////
-// Polarisation mono version
-///////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////////////
+// Polarisation
+/////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::interpolateElevationPol(double elevation,
                                                int    altitude,
