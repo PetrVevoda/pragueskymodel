@@ -146,27 +146,20 @@ int unpackCoefsFromHalf(const std::vector<double>& breaks,
                         std::vector<float>&        coefs,
                         const int                  offset,
                         const double               scale) {
-    for (int i = 0; i < breaks.size() - 1; ++i) {
-        const double val1 = doubleFromHalf(values[i + 1]) / scale;
-        const double val2 = doubleFromHalf(values[i]) / scale;
-        const double diff = val1 - val2;
-
-        coefs[offset + 2 * i]     = float(diff / (breaks[i + 1] - breaks[i]));
-        coefs[offset + 2 * i + 1] = float(val2);
-    }
-    return 2 * breaks.size() - 2;
+	for (int i = 0; i < breaks.size(); ++i) {
+		coefs[offset + i] = float(doubleFromHalf(values[i]) / scale);
+	}
+	return breaks.size();
 }
 
 int unpackCoefsFromFloat(const std::vector<double>& breaks,
                          const std::vector<float>&  values,
                          std::vector<float>&        coefs,
                          const int                  offset) {
-    for (int i = 0; i < breaks.size() - 1; ++i) {
-        coefs[offset + 2 * i] =
-            float((double(values[i + 1]) - double(values[i])) / (breaks[i + 1] - breaks[i]));
-        coefs[offset + 2 * i + 1] = values[i];
-    }
-    return 2 * breaks.size() - 2;
+	for (int i = 0; i < breaks.size(); ++i) {
+		coefs[offset + i] = values[i];
+	}
+	return breaks.size();
 }
 
 void PragueSkyModel::readRadiance(FILE* handle) {
@@ -274,14 +267,14 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     // Calculate offsets and strides
 
     sunOffsetRad = 0;
-    sunStrideRad = 2 * sunBreaksRad.size() - 2 + 2 * zenithBreaksRad.size() - 2;
+    sunStrideRad = sunBreaksRad.size() + zenithBreaksRad.size();
 
-    zenithOffsetRad = sunOffsetRad + 2 * sunBreaksRad.size() - 2;
+    zenithOffsetRad = sunOffsetRad + sunBreaksRad.size();
     zenithStrideRad = sunStrideRad;
 
     emphOffsetRad = sunOffsetRad + rankRad * sunStrideRad;
 
-    totalCoefsSingleConfigRad = emphOffsetRad + 2 * emphBreaksRad.size() - 2; // this is for one specific configuration
+    totalCoefsSingleConfigRad = emphOffsetRad + emphBreaksRad.size(); // this is for one specific configuration
     totalConfigsRad = channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibilitiesRad.size();
     totalCoefsAllConfigsRad = totalCoefsSingleConfigRad * totalConfigsRad;
 
@@ -301,7 +294,7 @@ void PragueSkyModel::readRadiance(FILE* handle) {
 
     for (int con = 0; con < totalConfigsRad; ++con) {
         for (int tc = 0; tc < rankRad; ++tc) {
-            valsRead = fread(radianceTemp.data(), sizeof(unsigned short), sunBreaksRad.size(), handle);
+            valsRead = fread(radianceTemp.data(), sizeof(uint16), sunBreaksRad.size(), handle);
             if (valsRead != sunBreaksRad.size())
                 throw DatasetReadException("sunCoefsRad");
             offset += unpackCoefsFromHalf(sunBreaksRad, radianceTemp, datasetRad, offset, 1.0);
@@ -311,13 +304,13 @@ void PragueSkyModel::readRadiance(FILE* handle) {
             if (valsRead != 1)
                 throw DatasetReadException("zenithScaleRad");
 
-            valsRead = fread(radianceTemp.data(), sizeof(unsigned short), zenithBreaksRad.size(), handle);
+            valsRead = fread(radianceTemp.data(), sizeof(uint16), zenithBreaksRad.size(), handle);
             if (valsRead != zenithBreaksRad.size())
                 throw DatasetReadException("zenithCoefsRad");
             offset += unpackCoefsFromHalf(zenithBreaksRad, radianceTemp, datasetRad, offset, zenithScale);
         }
 
-        valsRead = fread(radianceTemp.data(), sizeof(unsigned short), emphBreaksRad.size(), handle);
+        valsRead = fread(radianceTemp.data(), sizeof(uint16), emphBreaksRad.size(), handle);
         if (valsRead != emphBreaksRad.size())
             throw DatasetReadException("emphCoefsRad");
         offset += unpackCoefsFromHalf(emphBreaksRad, radianceTemp, datasetRad, offset, 1.0);
@@ -417,9 +410,9 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     // Calculate offsets and strides
 
     sunOffsetPol = 0;
-    sunStridePol = 2 * sunBreaksPol.size() - 2 + 2 * zenithBreaksPol.size() - 2;
+    sunStridePol = sunBreaksPol.size() + zenithBreaksPol.size();
 
-    zenithOffsetPol = sunOffsetPol + 2 * sunBreaksPol.size() - 2;
+    zenithOffsetPol = sunOffsetPol + sunBreaksPol.size();
     zenithStridePol = sunStridePol;
 
     totalCoefsSingleConfigPol =
@@ -670,9 +663,11 @@ int findSegment(const double x, const std::vector<double>& breaks) {
 }
 
 double evalPP(const double x, const int segment, const std::vector<double>& breaks, const std::vector<float>::const_iterator coefs) {
-    const double  x0 = x - breaks[segment];
-    const std::vector<float>::const_iterator sc = coefs + 2 * segment; // segment coefs
-    return *sc * x0 + *(sc + 1);
+	const double x0 = x - breaks[segment];
+	const std::vector<float>::const_iterator sc = coefs + segment; // segment coefs
+    const double a = (double(sc[1]) - double(sc[0])) / (breaks[segment + 1] - breaks[segment]);
+    const double b = double(sc[0]);
+	return a * x0 + b;
 }
 
 std::vector<float>::const_iterator PragueSkyModel::controlParams(const std::vector<float>& dataset,
