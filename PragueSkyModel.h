@@ -175,7 +175,7 @@ private:
 
     // Radiance data
 
-    std::vector<double> datasetRad;
+    std::vector<float> datasetRad;
 
     // Tranmittance metadata
 
@@ -207,7 +207,7 @@ private:
 
     // Polarisation data
 
-    std::vector<double> datasetPol;
+    std::vector<float> datasetPol;
 
 
 
@@ -271,27 +271,27 @@ private:
     void readTransmittance(FILE* handle);
     void readPolarisation(FILE* handle);
 
-    std::vector<double>::const_iterator controlParams(const std::vector<double>& dataset,
-                                const int     totalCoefsSingleConfig,
-                                const int     elevation,
-                                const int     altitude,
-                                const int     visibility,
-                                const int     albedo,
-                                const int     wavelength) const;
+    std::vector<float>::const_iterator controlParams(const std::vector<float>& dataset,
+                                                     const int                 totalCoefsSingleConfig,
+                                                     const int                 elevation,
+                                                     const int                 altitude,
+                                                     const int                 visibility,
+                                                     const int                 albedo,
+                                                     const int                 wavelength) const;
 
-    double reconstruct(const double                              gamma,
-                       const double                              alpha,
-                       const double                              zero,
-                       const int                                 gammaSegment,
-                       const int                                 alphaSegment,
-                       const int                                 zeroSegment,
-                       const std::vector<double>::const_iterator controlParams) const;
+    double reconstruct(const double                             gamma,
+                       const double                             alpha,
+                       const double                             zero,
+                       const int                                gammaSegment,
+                       const int                                alphaSegment,
+                       const int                                zeroSegment,
+                       const std::vector<float>::const_iterator controlParams) const;
 
-    double reconstructPol(const double                              gamma,
-                          const double                              alpha,
-                          const int                                 gammaSegment,
-                          const int                                 alphaSegment,
-                          const std::vector<double>::const_iterator controlParams) const;
+    double reconstructPol(const double                             gamma,
+                          const double                             alpha,
+                          const int                                gammaSegment,
+                          const int                                alphaSegment,
+                          const std::vector<float>::const_iterator controlParams) const;
 
     double interpolateElevation(double elevation,
                                 int    altitude,

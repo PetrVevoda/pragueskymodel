@@ -143,7 +143,7 @@ double clamp01(const double x) {
 
 int unpackCoefsFromHalf(const std::vector<double>& breaks,
                         const std::vector<uint16>& values,
-                        std::vector<double>&       coefs,
+                        std::vector<float>&        coefs,
                         const int                  offset,
                         const double               scale) {
     for (int i = 0; i < breaks.size() - 1; ++i) {
@@ -151,19 +151,20 @@ int unpackCoefsFromHalf(const std::vector<double>& breaks,
         const double val2 = doubleFromHalf(values[i]) / scale;
         const double diff = val1 - val2;
 
-        coefs[offset + 2 * i]     = diff / (breaks[i + 1] - breaks[i]);
-        coefs[offset + 2 * i + 1] = val2;
+        coefs[offset + 2 * i]     = float(diff / (breaks[i + 1] - breaks[i]));
+        coefs[offset + 2 * i + 1] = float(val2);
     }
     return 2 * breaks.size() - 2;
 }
 
 int unpackCoefsFromFloat(const std::vector<double>& breaks,
                          const std::vector<float>&  values,
-                         std::vector<double>&       coefs,
+                         std::vector<float>&        coefs,
                          const int                  offset) {
     for (int i = 0; i < breaks.size() - 1; ++i) {
-        coefs[offset + 2 * i]     = (double(values[i + 1]) - double(values[i])) / (breaks[i + 1] - breaks[i]);
-        coefs[offset + 2 * i + 1] = double(values[i]);
+        coefs[offset + 2 * i] =
+            float((double(values[i + 1]) - double(values[i])) / (breaks[i + 1] - breaks[i]));
+        coefs[offset + 2 * i + 1] = values[i];
     }
     return 2 * breaks.size() - 2;
 }
@@ -668,19 +669,19 @@ int findSegment(const double x, const std::vector<double>& breaks) {
     return segment;
 }
 
-double evalPP(const double x, const int segment, const std::vector<double>& breaks, const std::vector<double>::const_iterator coefs) {
+double evalPP(const double x, const int segment, const std::vector<double>& breaks, const std::vector<float>::const_iterator coefs) {
     const double  x0 = x - breaks[segment];
-    const std::vector<double>::const_iterator sc = coefs + 2 * segment; // segment coefs
+    const std::vector<float>::const_iterator sc = coefs + 2 * segment; // segment coefs
     return *sc * x0 + *(sc + 1);
 }
 
-std::vector<double>::const_iterator PragueSkyModel::controlParams(const std::vector<double>& dataset,
-                                                                  const int totalCoefsSingleConfig,
-                                                                  const int elevation,
-                                                                  const int altitude,
-                                                                  const int visibility,
-                                                                  const int albedo,
-                                                                  const int wavelength) const {
+std::vector<float>::const_iterator PragueSkyModel::controlParams(const std::vector<float>& dataset,
+                                                                 const int totalCoefsSingleConfig,
+                                                                 const int elevation,
+                                                                 const int altitude,
+                                                                 const int visibility,
+                                                                 const int albedo,
+                                                                 const int wavelength) const {
     return dataset.cbegin() +
            (totalCoefsSingleConfig *
             (wavelength + channels * elevation + channels * elevationsRad.size() * altitude +
@@ -688,13 +689,13 @@ std::vector<double>::const_iterator PragueSkyModel::controlParams(const std::vec
              channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibility));
 }
 
-double PragueSkyModel::reconstruct(const double                              gamma,
-                                   const double                              alpha,
-                                   const double                              zero,
-                                   const int                                 gammaSegment,
-                                   const int                                 alphaSegment,
-                                   const int                                 zeroSegment,
-                                   const std::vector<double>::const_iterator controlParams) const {
+double PragueSkyModel::reconstruct(const double                             gamma,
+                                   const double                             alpha,
+                                   const double                             zero,
+                                   const int                                gammaSegment,
+                                   const int                                alphaSegment,
+                                   const int                                zeroSegment,
+                                   const std::vector<float>::const_iterator controlParams) const {
     double res = 0.0;
     for (int t = 0; t < rankRad; ++t) {
         const double sunVal =
@@ -711,11 +712,11 @@ double PragueSkyModel::reconstruct(const double                              gam
     return std::max(res, 0.0);
 }
 
-double PragueSkyModel::reconstructPol(const double                              gamma,
-                                      const double                              alpha,
-                                      const int                                 gammaSegment,
-                                      const int                                 alphaSegment,
-                                      const std::vector<double>::const_iterator controlParams) const {
+double PragueSkyModel::reconstructPol(const double                             gamma,
+                                      const double                             alpha,
+                                      const int                                gammaSegment,
+                                      const int                                alphaSegment,
+                                      const std::vector<float>::const_iterator controlParams) const {
     double res = 0;
     for (int t = 0; t < rankPol; ++t) {
         const double sunVal =
@@ -749,13 +750,13 @@ double PragueSkyModel::interpolateElevation(double elevation,
     const int    elevationLow = (int)elevation;
     const double factor       = elevation - (double)elevationLow;
 
-    const std::vector<double>::const_iterator controlParamsLow = controlParams(datasetRad,
-                                                                               totalCoefsSingleConfigRad,
-                                                                               elevationLow,
-                                                                               altitude,
-                                                                               visibility,
-                                                                               albedo,
-                                                                               wavelength);
+    const std::vector<float>::const_iterator controlParamsLow = controlParams(datasetRad,
+                                                                              totalCoefsSingleConfigRad,
+                                                                              elevationLow,
+                                                                              altitude,
+                                                                              visibility,
+                                                                              albedo,
+                                                                              wavelength);
 
     double resLow =
         reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsLow);
@@ -764,13 +765,13 @@ double PragueSkyModel::interpolateElevation(double elevation,
         return resLow;
     }
 
-    const std::vector<double>::const_iterator controlParamsHigh = controlParams(datasetRad,
-                                                                                totalCoefsSingleConfigRad,
-                                                                                elevationLow + 1,
-                                                                                altitude,
-                                                                                visibility,
-                                                                                albedo,
-                                                                                wavelength);
+    const std::vector<float>::const_iterator controlParamsHigh = controlParams(datasetRad,
+                                                                               totalCoefsSingleConfigRad,
+                                                                               elevationLow + 1,
+                                                                               altitude,
+                                                                               visibility,
+                                                                               albedo,
+                                                                               wavelength);
 
     double resHigh =
         reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsHigh);
@@ -1298,13 +1299,13 @@ double PragueSkyModel::interpolateElevationPol(double elevation,
     const int    elevationLow = (int)elevation;
     const double factor        = elevation - (double)elevationLow;
 
-    const std::vector<double>::const_iterator controlParamsLow = controlParams(datasetPol,
-                                                     totalCoefsSingleConfigPol,
-                                                     elevationLow,
-                                                     altitude,
-                                                     visibility,
-                                                     albedo,
-                                                     wavelength);
+    const std::vector<float>::const_iterator controlParamsLow = controlParams(datasetPol,
+                                                                              totalCoefsSingleConfigPol,
+                                                                              elevationLow,
+                                                                              altitude,
+                                                                              visibility,
+                                                                              albedo,
+                                                                              wavelength);
 
     double resLow = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsLow);
 
@@ -1312,13 +1313,13 @@ double PragueSkyModel::interpolateElevationPol(double elevation,
         return resLow;
     }
 
-    const std::vector<double>::const_iterator controlParamsHigh = controlParams(datasetPol,
-                                                      totalCoefsSingleConfigPol,
-                                                      elevationLow + 1,
-                                                      altitude,
-                                                      visibility,
-                                                      albedo,
-                                                      wavelength);
+    const std::vector<float>::const_iterator controlParamsHigh = controlParams(datasetPol,
+                                                                               totalCoefsSingleConfigPol,
+                                                                               elevationLow + 1,
+                                                                               altitude,
+                                                                               visibility,
+                                                                               albedo,
+                                                                               wavelength);
 
     double resHigh = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsHigh);
 
