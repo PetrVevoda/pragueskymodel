@@ -474,45 +474,8 @@ PragueSkyModel::PragueSkyModel(const std::string& filename) {
 
 
 /////////////////////////////////////////////////////////////////////////////////////
-// Angles
+// Filling the Parameters structure
 /////////////////////////////////////////////////////////////////////////////////////
-
-void computeAltitudeAndElevation(const PragueSkyModel::Vector3& viewpoint,
-                                 const double                   groundLevelSolarElevationAtOrigin,
-                                 const double                   groundLevelSolarAzimuthAtOrigin,
-                                 double&                        solarElevationAtViewpoint,
-                                 double&                        altitudeOfViewpoint,
-                                 double&                        distanceToView,
-                                 PragueSkyModel::Vector3&       directionToZenithN,
-                                 PragueSkyModel::Vector3&       directionToSunN) {
-    // Direction to zenith
-
-    PragueSkyModel::Vector3 centerOfTheEarth  = PragueSkyModel::Vector3(0.0, 0.0, -PLANET_RADIUS);
-    PragueSkyModel::Vector3 directionToZenith = viewpoint - centerOfTheEarth;
-    directionToZenithN                       = normalize(directionToZenith);
-
-    // Altitude of viewpoint
-
-    distanceToView = magnitude(directionToZenith);
-    assert(distanceToView > -0.0001);
-    distanceToView = std::max(distanceToView, 0.0);
-
-    altitudeOfViewpoint = distanceToView - PLANET_RADIUS;
-    altitudeOfViewpoint = std::max(altitudeOfViewpoint, 0.0);
-
-    // Direction to sun
-
-    directionToSunN.x = cos(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
-    directionToSunN.y = sin(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
-    directionToSunN.z = sin(groundLevelSolarElevationAtOrigin);
-
-    // Solar elevation at viewpoint (more precisely, solar elevation at the point
-    // on the ground directly below viewpoint)
-
-    const double dotZenithSun = dot(directionToZenithN, directionToSunN);
-
-    solarElevationAtViewpoint = 0.5 * PI - acos(dotZenithSun);
-}
 
 PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& viewpoint,
                                                              const Vector3& viewDirection,
@@ -527,31 +490,36 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
 
     Parameters params;
     params.visibility = visibility;
-    params.albedo = albedo;
+    params.albedo     = albedo;
 
     // Shift viewpoint about safety altitude up
 
     const Vector3 centerOfTheEarth   = Vector3(0.0, 0.0, -PLANET_RADIUS);
     Vector3       toViewpoint        = viewpoint - centerOfTheEarth;
     Vector3       toViewpointN       = normalize(toViewpoint);
-    const double  distanceToViewTmp  = magnitude(toViewpoint) + SAFETY_ALTITUDE;
-    Vector3       toShiftedViewpoint = toViewpointN * distanceToViewTmp;
+    const double  distanceToView     = magnitude(toViewpoint) + SAFETY_ALTITUDE;
+    Vector3       toShiftedViewpoint = toViewpointN * distanceToView;
     Vector3       shiftedViewpoint   = centerOfTheEarth + toShiftedViewpoint;
 
     Vector3 viewDirectionN = normalize(viewDirection);
 
-    double  distanceToView;
-    Vector3 directionToZenithN;
-    Vector3 directionToSunN;
+    // Compute altitude of viewpoint
 
-    computeAltitudeAndElevation(shiftedViewpoint,
-                                groundLevelSolarElevationAtOrigin,
-                                groundLevelSolarAzimuthAtOrigin,
-                                params.elevation,
-                                params.altitude,
-                                distanceToView,
-                                directionToZenithN,
-                                directionToSunN);
+    params.altitude = distanceToView - PLANET_RADIUS;
+    params.altitude = std::max(params.altitude, 0.0);
+
+    // Direction to sun
+
+    Vector3 directionToSunN;
+    directionToSunN.x = cos(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
+    directionToSunN.y = sin(groundLevelSolarAzimuthAtOrigin) * cos(groundLevelSolarElevationAtOrigin);
+    directionToSunN.z = sin(groundLevelSolarElevationAtOrigin);
+
+    // Solar elevation at viewpoint (more precisely, solar elevation at the point
+    // on the ground directly below viewpoint)
+
+    const double dotZenithSun = dot(toViewpointN, directionToSunN);
+    params.elevation          = 0.5 * PI - acos(dotZenithSun);
 
     // Altitude-corrected view direction
 
@@ -562,7 +530,7 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
         const double correction =
             sqrt(distanceToView * distanceToView - PLANET_RADIUS * PLANET_RADIUS) / distanceToView;
 
-        Vector3 toNewOrigin = directionToZenithN * (distanceToView - correction);
+        Vector3 toNewOrigin = toViewpointN * (distanceToView - correction);
         Vector3 newOrigin   = centerOfTheEarth + toNewOrigin;
         Vector3 correctView = lookAt - newOrigin;
 
@@ -574,31 +542,31 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
     // Sun angle (gamma) - no correction
 
     double dotProductSun = dot(viewDirectionN, directionToSunN);
-    params.gamma = acos(dotProductSun);
+    params.gamma         = acos(dotProductSun);
 
     // Shadow angle - requires correction
 
     const double effectiveElevation = groundLevelSolarElevationAtOrigin;
     const double effectiveAzimuth   = groundLevelSolarAzimuthAtOrigin;
-    const double shadowAngle       = effectiveElevation + PI * 0.5;
+    const double shadowAngle        = effectiveElevation + PI * 0.5;
 
     Vector3 shadowDirectionN = Vector3(cos(shadowAngle) * cos(effectiveAzimuth),
                                        cos(shadowAngle) * sin(effectiveAzimuth),
                                        sin(shadowAngle));
 
     const double dotProductShadow = dot(correctViewN, shadowDirectionN);
-    params.shadow = acos(dotProductShadow);
+    params.shadow                 = acos(dotProductShadow);
 
     // Zenith angle (theta) - corrected version stored in otherwise unused zero
     // angle
 
-    double cosThetaCor = dot(correctViewN, directionToZenithN);
-    params.zero = acos(cosThetaCor);
+    double cosThetaCor = dot(correctViewN, toViewpointN);
+    params.zero        = acos(cosThetaCor);
 
     // Zenith angle (theta) - uncorrected version goes outside
 
-    double cosTheta = dot(viewDirectionN, directionToZenithN);
-    params.theta = acos(cosTheta);
+    double cosTheta = dot(viewDirectionN, toViewpointN);
+    params.theta    = acos(cosTheta);
 
     return params;
 }
