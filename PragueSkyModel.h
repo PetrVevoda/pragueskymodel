@@ -1,6 +1,7 @@
 #include <exception>
 #include <string>
 #include <vector>
+#include <cmath>
 
 /// Physically-based sky model by Wilkie et al. [2020]. Improves on previous work especially in accuracy of
 /// sunset scenarios. Based on reconstruction of radiance from a small dataset fitted to a large set of images
@@ -31,7 +32,6 @@
 /// simple Vector3 class to simplify working with points and directions and expects using this class when
 /// passing viewing point and direction to the computeParameters method.
 class PragueSkyModel {
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -140,44 +140,94 @@ public:
     };
 
 
+/////////////////////////////////////////////////////////////////////////////////////
+// Private types
+/////////////////////////////////////////////////////////////////////////////////////
+private:
+    /// Structure holding index and factor for interpolating with respect to two neighboring values of an
+    /// array.
+    struct InterpolationParameter {
+        double factor;
+        int    index;
+    };
+
+    /// Angles converted into interpolation parameters.
+    struct AngleParameters {
+        InterpolationParameter gamma, alpha, zero;
+    };
+
+    /// Structure controlling interpolation with respect to visibility, albedo, altitude and elevation.
+    struct ControlParameters {
+        /// 16 sets of parameters that will be bi-linearly interpolated
+        std::array<std::vector<float>::const_iterator, 16> coefficients;
+        std::array<double, 4>                              interpolationFactor;
+    };
+
+    /// Structure used for storing radiance and polarisation metadata.
+    struct Metadata {
+        int rank;
+
+        int                 sunOffset;
+        int                 sunStride;
+        std::vector<double> sunBreaks;
+
+        int                 zenithOffset;
+        int                 zenithStride;
+        std::vector<double> zenithBreaks;
+
+        int                 emphOffset; // not used for polarisation
+        std::vector<double> emphBreaks; // not used for polarisation
+
+        int totalCoefsSingleConfig;
+        int totalCoefsAllConfigs;
+	};
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Private data
 /////////////////////////////////////////////////////////////////////////////////////
-private:
     int    channels;
     double channelStart;
     double channelWidth;
 
-    // Radiance metadata
+	// Total number of configurations
+	int totalConfigs;
+
+    // Metadata common for radiance and polarisation
 
     std::vector<double> visibilitiesRad;
     std::vector<double> albedosRad;
     std::vector<double> altitudesRad;
     std::vector<double> elevationsRad;
 
-    int rankRad;
+    // Radiance metadata
 
-    int                 sunOffsetRad;
-    int                 sunStrideRad;
-    std::vector<double> sunBreaksRad;
-
-    int                 zenithOffsetRad;
-    int                 zenithStrideRad;
-    std::vector<double> zenithBreaksRad;
-
-    int                 emphOffsetRad;
-    std::vector<double> emphBreaksRad;
-
-    int totalCoefsSingleConfigRad;
-    int totalCoefsAllConfigsRad;
-    int totalConfigsRad;
+    Metadata metadataRad;
 
     // Radiance data
+    // 
+	// Structure:
+	// [[[[[[ sunCoefsRad       (sunBreaksCountRad * float), 
+	//        zenithCoefsRad (zenithBreaksCountRad * float) ] * rankRad, 
+	//        emphCoefsRad     (emphBreaksCountRad * float) ]
+	//  * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
+    
+    std::vector<float> dataRad;
 
-    std::vector<float> datasetRad;
+	// Polarisation metadata
 
-    // Tranmittance metadata
+    Metadata metadataPol;
+
+	// Polarisation data
+    // 
+	// Struture:
+	// [[[[[[ sunCoefsPol       (sunBreaksCountPol * float), 
+	//        zenithCoefsPol (zenithBreaksCountPol * float) ] * rankPol] 
+	// * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
+    
+	std::vector<float> datasetPol;
+
+    // Transmittance metadata
 
     int                aDim;
     int                dDim;
@@ -185,30 +235,10 @@ private:
     std::vector<float> altitudesTrans;
     std::vector<float> visibilitiesTrans;
 
-    // Tranmittance data
+    // Transmittance data
 
     std::vector<float> datasetTransU;
     std::vector<float> datasetTransV;
-
-    // Polarisation metadata
-
-    int rankPol;
-
-    int                 sunOffsetPol;
-    int                 sunStridePol;
-    std::vector<double> sunBreaksPol;
-
-    int                 zenithOffsetPol;
-    int                 zenithStridePol;
-    std::vector<double> zenithBreaksPol;
-
-    int totalCoefsSingleConfigPol;
-    int totalCoefsAllConfigsPol;
-
-    // Polarisation data
-
-    std::vector<float> datasetPol;
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -227,8 +257,8 @@ public:
     /// Expects view point and direction, sun elevation and azimuth at origin, ground level visibility and
     /// ground albedo. Assumes origin at [0,0,0] with Z axis pointing up. Thus view point [0, 0, 100] defines
     /// observer altitude 100 m. Range of available values depends on the used dataset. The full version
-    /// supports altitude from [0, 15000], elevation from [-0.073, PI/2], azimuth from [0, PI], visibility
-    /// from [20, 131.8], and albedo from [0, 1]. Values outside range of the used dataset are clamped to the
+    /// supports altitude from [0, 15000] m, elevation from [-0.073, PI/2] rad, azimuth from [0, PI] rad, visibility
+    /// from [20, 131.8] km, and albedo from [0, 1]. Values outside range of the used dataset are clamped to the
     /// nearest supported value.
     Parameters computeParameters(const Vector3& viewPoint,
                                  const Vector3& viewDirection,
@@ -267,91 +297,80 @@ public:
 // Private methods
 /////////////////////////////////////////////////////////////////////////////////////
 private:
+    /// Reads radiance part of the dataset file into memory.
+	/// Throws:
+	/// - DatasetReadException: if an error occurred while reading the dataset file
     void readRadiance(FILE* handle);
+
+	/// Reads transmittance part of the dataset file into memory.
+	/// Throws:
+	/// - DatasetReadException: if an error occurred while reading the dataset file
     void readTransmittance(FILE* handle);
+
+	/// Reads polarisation part of the dataset file into memory.
+	/// Throws:
+	/// - DatasetReadException: if an error occurred while reading the dataset file
     void readPolarisation(FILE* handle);
 
-    std::vector<float>::const_iterator controlParams(const std::vector<float>& dataset,
-                                                     const int                 totalCoefsSingleConfig,
-                                                     const int                 elevation,
-                                                     const int                 altitude,
-                                                     const int                 visibility,
-                                                     const int                 albedo,
-                                                     const int                 wavelength) const;
+    /// Gets pointer to coefficients in the dataset array corresponding to the given configuration.
+    std::vector<float>::const_iterator getCoefficients(const std::vector<float>& dataset,
+                                                       const int                 totalCoefsSingleConfig,
+                                                       const int                 elevation,
+                                                       const int                 altitude,
+                                                       const int                 visibility,
+                                                       const int                 albedo,
+                                                       const int                 wavelength) const;
 
-    double reconstruct(const double                             gamma,
-                       const double                             alpha,
-                       const double                             zero,
-                       const int                                gammaSegment,
-                       const int                                alphaSegment,
-                       const int                                zeroSegment,
-                       const std::vector<float>::const_iterator controlParams) const;
+    /// Recursive function controlling interpolation of reconstructed radiance between two neighboring visibility,
+    /// albedo, altitude and elevation values.
+    template <int TOffset, int TLevel>
+    double interpolate(const AngleParameters&   angleParameters,
+                       const ControlParameters& controlParameters,
+                       const Metadata&          metadata) const {
+        /// Starts at level 0 and recursively goes down to level 4 while computing offset to the control
+        /// parameters array. There it reconstructs radiance. When returning from recursion interpolates
+        /// according to elevation, altitude, albedo and visibility at level 3, 2, 1 and 0, respectively.
+        if constexpr (TLevel == 4) {
+            return reconstruct(angleParameters, controlParameters.coefficients[TOffset], metadata);
+        } else {
+            // Compute the first value
+            const double resultLow =
+                interpolate<TOffset, TLevel + 1>(angleParameters, controlParameters, metadata);
 
-    double reconstructPol(const double                             gamma,
-                          const double                             alpha,
-                          const int                                gammaSegment,
-                          const int                                alphaSegment,
-                          const std::vector<float>::const_iterator controlParams) const;
+            // Skip the second value if not useful or not available.
+            if (controlParameters.interpolationFactor[TLevel] < 1e-6) {
+                return resultLow;
+            }
 
-    double interpolateElevation(double elevation,
-                                int    altitude,
-                                int    visibility,
-                                int    albedo,
-                                int    wavelength,
-                                double gamma,
-                                double alpha,
-                                double zero,
-                                int    gammaSegment,
-                                int    alphaSegment,
-                                int    zeroSegment) const;
+            // Compute the second value
+            const double resultHigh =
+                interpolate<TOffset + (1 << (3 - TLevel)), TLevel + 1>(angleParameters,
+                                                                       controlParameters,
+                                                                       metadata);
 
-    double interpolateAltitude(double elevation,
-                               double altitude,
-                               int    visibility,
-                               int    albedo,
-                               int    wavelength,
-                               double gamma,
-                               double alpha,
-                               double zero,
-                               int    gammaSegment,
-                               int    alphaSegment,
-                               int    zeroSegment) const;
+            /// Interpolate between the two
+            return lerp(resultLow, resultHigh, controlParameters.interpolationFactor[TLevel]);
+        }
+    }
 
-    double interpolateVisibility(double elevation,
-                                 double altitude,
-                                 double visibility,
-                                 int    albedo,
-                                 int    wavelength,
-                                 double gamma,
-                                 double alpha,
-                                 double zero,
-                                 int    gammaSegment,
-                                 int    alphaSegment,
-                                 int    zeroSegment) const;
+    /// Reconstructs sky radiance or polarisation from the given control parameters by inverse tensor
+    /// decomposition.
+    double reconstruct(const AngleParameters&                   angleParameters,
+                       const std::vector<float>::const_iterator controlParameters,
+                       const Metadata&                          metadata) const;
 
-    double interpolateAlbedo(double elevation,
-                             double altitude,
-                             double visibility,
-                             double albedo,
-                             int    wavelength,
-                             double gamma,
-                             double alpha,
-                             double zero,
-                             int    gammaSegment,
-                             int    alphaSegment,
-                             int    zeroSegment) const;
-
-    double interpolateWavelength(double elevation,
-                                 double altitude,
-                                 double visibility,
-                                 double albedo,
-                                 double wavelength,
-                                 double gamma,
-                                 double alpha,
-                                 double zero,
-                                 int    gammaSegment,
-                                 int    alphaSegment,
-                                 int    zeroSegment) const;
+    /// Get interpolation parameter for the given query value, i.e. finds position of the query value between
+    /// a pair of break values.
+    ///
+    /// Used for albedo, elevation, altitude, visibility and angles (theta, alpha, or gamma).
+    InterpolationParameter getInterpolationParameter(const double               queryVal,
+                                                     const std::vector<double>& breaks) const;
+    
+    /// Evaluates the model. Used for computing sky radiance and polarisation.
+    double evaluateModel(const Parameters&         params,
+                         const double              wavelength,
+                         const std::vector<float>& data,
+                         const Metadata&           metadata) const;
 
     std::vector<float>::const_iterator transmittanceCoefsIndex(const int visibility, const int altitude, const int wavelength) const;
 
@@ -383,54 +402,4 @@ private:
                                 const int    altitudeLow,
                                 const int    altitudeInc,
                                 const double altitudeFactor) const;
-
-    double interpolateElevationPol(double elevation,
-                                   int    altitude,
-                                   int    visibility,
-                                   int    albedo,
-                                   int    wavelength,
-                                   double gamma,
-                                   double alpha,
-                                   int    gammaSegment,
-                                   int    alphaSegment) const;
-
-    double interpolateAltitudePol(double elevation,
-                                  double altitude,
-                                  int    visibility,
-                                  int    albedo,
-                                  int    wavelength,
-                                  double gamma,
-                                  double alpha,
-                                  int    gammaSegment,
-                                  int    alphaSegment) const;
-
-    double interpolateVisibilityPol(double elevation,
-                                    double altitude,
-                                    double visibility,
-                                    int    albedo,
-                                    int    wavelength,
-                                    double gamma,
-                                    double alpha,
-                                    int    gammaSegment,
-                                    int    alphaSegment) const;
-
-    double interpolateAlbedoPol(double elevation,
-                                double altitude,
-                                double visibility,
-                                double albedo,
-                                int    wavelength,
-                                double gamma,
-                                double alpha,
-                                int    gammaSegment,
-                                int    alphaSegment) const;
-
-    double interpolateWavelengthPol(double elevation,
-                                    double altitude,
-                                    double visibility,
-                                    double albedo,
-                                    double wavelength,
-                                    double gamma,
-                                    double alpha,
-                                    int    gammaSegment,
-                                    int    alphaSegment) const;
 };

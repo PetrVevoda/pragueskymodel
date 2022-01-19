@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cmath>
 #include <limits>
 #include "PragueSkyModel.h"
 
@@ -10,10 +9,11 @@
 /////////////////////////////////////////////////////////////////////////////////////
 
 constexpr double PI              = 3.141592653589793;
+constexpr double RAD_TO_DEG      = 180.0 / PI;
 constexpr double PLANET_RADIUS   = 6378000.0;
 constexpr double SAFETY_ALTITUDE = 50.0;
 constexpr double SUN_RADIUS      = 0.004654793; // = 0.2667 degrees
-constexpr double DIST_TO_EDGE = 1571524.413613; // Maximum distance to the edge of the atmosphere in the transmittance model
+constexpr double DIST_TO_EDGE    = 1571524.413613; // Maximum distance to the edge of the atmosphere in the transmittance model
 constexpr double SUN_RAD_START   = 310;
 constexpr double SUN_RAD_STEP    = 1;
 constexpr double SUN_RAD_TABLE[] = {
@@ -66,8 +66,8 @@ constexpr double SUN_RAD_TABLE[] = {
     15423.,  15381.6, 15354.4, 15353.,  15357.3, 15347.3, 15320.2, 15273.1, 15222.,  15183.1, 15149.6,
     15114.6, 15076.8, 15034.6, 14992.9
 };
-constexpr int SVD_RANK = 12;
-
+constexpr double SUN_RAD_END = SUN_RAD_START + SUN_RAD_STEP * std::size(SUN_RAD_TABLE);
+constexpr int    SVD_RANK    = 12;
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -75,7 +75,7 @@ constexpr int SVD_RANK = 12;
 /////////////////////////////////////////////////////////////////////////////////////
 
 double radiansToDegrees(const double radians) {
-    return radians * 180.0 / PI;
+    return radians * RAD_TO_DEG;
 }
 
 typedef unsigned short     uint16;
@@ -98,7 +98,6 @@ double doubleFromHalf(const uint16 half) {
 }
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////
 // Vector3 operations
 /////////////////////////////////////////////////////////////////////////////////////
@@ -116,7 +115,6 @@ PragueSkyModel::Vector3 normalize(const PragueSkyModel::Vector3& vector) {
 }
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 /////////////////////////////////////////////////////////////////////////////////////
@@ -125,7 +123,7 @@ double lerp(const double from, const double to, const double factor) {
     return (1.0 - factor) * from + factor * to;
 }
 
-double nonlinlerp(const double a, const double b, const double w, const double p) {
+double nonlerp(const double a, const double b, const double w, const double p) {
     const double c1 = pow(a, p);
     const double c2 = pow(b, p);
     return ((pow(w, p) - c1) / (c2 - c1));
@@ -136,45 +134,23 @@ double clamp01(const double x) {
 }
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////
 // Data reading
 /////////////////////////////////////////////////////////////////////////////////////
 
-int unpackCoefsFromHalf(const std::vector<double>& breaks,
-                        const std::vector<uint16>& values,
-                        std::vector<float>&        coefs,
-                        const int                  offset,
-                        const double               scale) {
-	for (int i = 0; i < breaks.size(); ++i) {
-		coefs[offset + i] = float(doubleFromHalf(values[i]) / scale);
-	}
-	return breaks.size();
-}
-
-int unpackCoefsFromFloat(const std::vector<double>& breaks,
-                         const std::vector<float>&  values,
-                         std::vector<float>&        coefs,
-                         const int                  offset) {
-	for (int i = 0; i < breaks.size(); ++i) {
-		coefs[offset + i] = values[i];
-	}
-	return breaks.size();
-}
-
 void PragueSkyModel::readRadiance(FILE* handle) {
-    // Read metadata
+    // Read metadata.
 
     // Structure of the metadata part of the data file:
-    // visibilityCount   (1 * int),  visibilities (visibilityCount * double),
-    // albedoCount      (1 * int),  albedos    (albedoCount * double),
-    // altitudeCount    (1 * int),  altitudes  (altitudeCount * double),
-    // elevationCount   (1 * int),  elevations (elevationCount * double),
-    // channels          (1 * int),  channelStart  (1 * double), channelWidth (1
-    // * double), rankRad (1 * int), sunBreaksCountRad       (1 * int),
-    // sunBreaksRad     (sunBreaksCountRad * double), zenithBreaksCountRad    (1 * int),
-    // zenithBreaksRad  (zenithBreaksCountRad * double), emphBreaksCountRad      (1 * int),
-    // emphBreaksRad    (emphBreaksCountRad * double)
+    // visibilityCount      (1 * int), visibilities         (visibilityCount * double),
+    // albedoCount          (1 * int), albedos                  (albedoCount * double),
+    // altitudeCount        (1 * int), altitudes              (altitudeCount * double),
+    // elevationCount       (1 * int), elevations            (elevationCount * double),
+    // channels             (1 * int), channelStart                       (1 * double), channelWidth (1 * double), 
+    // rankRad              (1 * int), 
+    // sunBreaksCountRad    (1 * int), sunBreaksRad       (sunBreaksCountRad * double), 
+    // zenithBreaksCountRad (1 * int), zenithBreaksRad (zenithBreaksCountRad * double), 
+    // emphBreaksCountRad   (1 * int), emphBreaksRad     (emphBreaksCountRad * double)
 
     int valsRead;
 
@@ -189,32 +165,32 @@ void PragueSkyModel::readRadiance(FILE* handle) {
         throw DatasetReadException("visibilitesRad");
 
     int albedoCount = 0;
-    valsRead = fread(&albedoCount, sizeof(int), 1, handle);
+    valsRead        = fread(&albedoCount, sizeof(int), 1, handle);
     if (valsRead != 1 || albedoCount < 1)
         throw DatasetReadException("albedoCountRad");
 
     albedosRad.resize(albedoCount);
-    valsRead    = fread(albedosRad.data(), sizeof(double), albedoCount, handle);
+    valsRead = fread(albedosRad.data(), sizeof(double), albedoCount, handle);
     if (valsRead != albedoCount)
         throw DatasetReadException("albedosRad");
 
     int altitudeCount = 0;
-    valsRead = fread(&altitudeCount, sizeof(int), 1, handle);
+    valsRead          = fread(&altitudeCount, sizeof(int), 1, handle);
     if (valsRead != 1 || altitudeCount < 1)
         throw DatasetReadException("altitudeCountRad");
 
     altitudesRad.resize(altitudeCount);
-    valsRead      = fread(altitudesRad.data(), sizeof(double), altitudeCount, handle);
+    valsRead = fread(altitudesRad.data(), sizeof(double), altitudeCount, handle);
     if (valsRead != altitudeCount)
         throw DatasetReadException("altitudesRad");
 
     int elevationCount = 0;
-    valsRead = fread(&elevationCount, sizeof(int), 1, handle);
+    valsRead           = fread(&elevationCount, sizeof(int), 1, handle);
     if (valsRead != 1 || elevationCount < 1)
         throw DatasetReadException(" elevationCountRad");
 
     elevationsRad.resize(elevationCount);
-    valsRead       = fread(elevationsRad.data(), sizeof(double), elevationCount, handle);
+    valsRead = fread(elevationsRad.data(), sizeof(double), elevationCount, handle);
     if (valsRead != elevationCount)
         throw DatasetReadException("elevationsRad");
 
@@ -230,90 +206,110 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     if (valsRead != 1 || channelWidth <= 0)
         throw DatasetReadException("channelWidth");
 
-    valsRead = fread(&rankRad, sizeof(int), 1, handle);
-    if (valsRead != 1 || rankRad < 1)
+    totalConfigs =
+        channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibilitiesRad.size();
+
+    valsRead = fread(&metadataRad.rank, sizeof(int), 1, handle);
+    if (valsRead != 1 || metadataRad.rank < 1)
         throw DatasetReadException("rankRad");
 
     int sunBreaksCount = 0;
-    valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
+    valsRead           = fread(&sunBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || sunBreaksCount < 2)
         throw DatasetReadException("sunBreaksCountRad");
 
-    sunBreaksRad.resize(sunBreaksCount);
-    valsRead   = fread(sunBreaksRad.data(), sizeof(double), sunBreaksCount, handle);
+    metadataRad.sunBreaks.resize(sunBreaksCount);
+    valsRead = fread(metadataRad.sunBreaks.data(), sizeof(double), sunBreaksCount, handle);
     if (valsRead != sunBreaksCount)
         throw DatasetReadException("sunBreaksRad");
 
     int zenitBreaksCount = 0;
-    valsRead = fread(&zenitBreaksCount, sizeof(int), 1, handle);
+    valsRead             = fread(&zenitBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || zenitBreaksCount < 2)
         throw DatasetReadException("zenitBreaksCountRad");
 
-    zenithBreaksRad.resize(zenitBreaksCount);
-    valsRead      = fread(zenithBreaksRad.data(), sizeof(double), zenitBreaksCount, handle);
+    metadataRad.zenithBreaks.resize(zenitBreaksCount);
+    valsRead = fread(metadataRad.zenithBreaks.data(), sizeof(double), zenitBreaksCount, handle);
     if (valsRead != zenitBreaksCount)
         throw DatasetReadException("zenithBreaksRad");
 
     int emphBreaksCount = 0;
-    valsRead = fread(&emphBreaksCount, sizeof(int), 1, handle);
+    valsRead            = fread(&emphBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || emphBreaksCount < 2)
         throw DatasetReadException("emphBreaksCountRad");
 
-    emphBreaksRad.resize(emphBreaksCount);
-    valsRead    = fread(emphBreaksRad.data(), sizeof(double), emphBreaksCount, handle);
+    metadataRad.emphBreaks.resize(emphBreaksCount);
+    valsRead = fread(metadataRad.emphBreaks.data(), sizeof(double), emphBreaksCount, handle);
     if (valsRead != emphBreaksCount)
         throw DatasetReadException("emphBreaksRad");
 
-    // Calculate offsets and strides
+    // Calculate offsets and strides.
 
-    sunOffsetRad = 0;
-    sunStrideRad = sunBreaksRad.size() + zenithBreaksRad.size();
+    metadataRad.sunOffset = 0;
+    metadataRad.sunStride = metadataRad.sunBreaks.size() + metadataRad.zenithBreaks.size();
 
-    zenithOffsetRad = sunOffsetRad + sunBreaksRad.size();
-    zenithStrideRad = sunStrideRad;
+    metadataRad.zenithOffset = metadataRad.sunOffset + metadataRad.sunBreaks.size();
+    metadataRad.zenithStride = metadataRad.sunStride;
 
-    emphOffsetRad = sunOffsetRad + rankRad * sunStrideRad;
+    metadataRad.emphOffset = metadataRad.sunOffset + metadataRad.rank * metadataRad.sunStride;
 
-    totalCoefsSingleConfigRad = emphOffsetRad + emphBreaksRad.size(); // this is for one specific configuration
-    totalConfigsRad = channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibilitiesRad.size();
-    totalCoefsAllConfigsRad = totalCoefsSingleConfigRad * totalConfigsRad;
+    metadataRad.totalCoefsSingleConfig =
+        metadataRad.emphOffset + metadataRad.emphBreaks.size(); // this is for one specific configuration
+    metadataRad.totalCoefsAllConfigs = metadataRad.totalCoefsSingleConfig * totalConfigs;
 
-    // Read data
+    // Read data.
 
     // Structure of the data part of the data file:
-    // [[[[[[ sunCoefsRad (sunBreaksCountRad * half), zenithScale (1 * double),
-    // zenithCoefsRad (zenithBreaksCountRad * half) ] * rankRad, emphCoefsRad
-    // (emphBreaksCountRad * half) ]
-    //   * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
+    // [[[[[[ sunCoefsRad       (sunBreaksCountRad * half), zenithScale (1 * double), 
+    //        zenithCoefsRad (zenithBreaksCountRad * half) ] * rankRad, 
+    //        emphCoefsRad     (emphBreaksCountRad * half) ]
+    //  * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
-    int offset       = 0;
-    datasetRad.resize(totalCoefsAllConfigsRad);
+    int offset = 0;
+    dataRad.resize(metadataRad.totalCoefsAllConfigs);
 
     std::vector<uint16> radianceTemp;
-    radianceTemp.resize(std::max(sunBreaksRad.size(), std::max(zenithBreaksRad.size(), emphBreaksRad.size())));
+    radianceTemp.resize(std::max(metadataRad.sunBreaks.size(),
+                                 std::max(metadataRad.zenithBreaks.size(), metadataRad.emphBreaks.size())));
 
-    for (int con = 0; con < totalConfigsRad; ++con) {
-        for (int tc = 0; tc < rankRad; ++tc) {
-            valsRead = fread(radianceTemp.data(), sizeof(uint16), sunBreaksRad.size(), handle);
-            if (valsRead != sunBreaksRad.size())
+    for (int con = 0; con < totalConfigs; ++con) {
+        for (int r = 0; r < metadataRad.rank; ++r) {
+            // Read sun params.
+            valsRead = fread(radianceTemp.data(), sizeof(uint16), metadataRad.sunBreaks.size(), handle);
+            if (valsRead != metadataRad.sunBreaks.size())
                 throw DatasetReadException("sunCoefsRad");
-            offset += unpackCoefsFromHalf(sunBreaksRad, radianceTemp, datasetRad, offset, 1.0);
 
+            // Unpack sun params from half.
+            for (int i = 0; i < metadataRad.sunBreaks.size(); ++i) {
+                dataRad[offset++] = float(doubleFromHalf(radianceTemp[i]));
+            }
+
+            // Read scaling factor for zenith params.
             double zenithScale;
             valsRead = fread(&zenithScale, sizeof(double), 1, handle);
             if (valsRead != 1)
                 throw DatasetReadException("zenithScaleRad");
 
-            valsRead = fread(radianceTemp.data(), sizeof(uint16), zenithBreaksRad.size(), handle);
-            if (valsRead != zenithBreaksRad.size())
+            // Read zenith params.
+            valsRead = fread(radianceTemp.data(), sizeof(uint16), metadataRad.zenithBreaks.size(), handle);
+            if (valsRead != metadataRad.zenithBreaks.size())
                 throw DatasetReadException("zenithCoefsRad");
-            offset += unpackCoefsFromHalf(zenithBreaksRad, radianceTemp, datasetRad, offset, zenithScale);
+
+            // Unpack zenith params from half (these need additional rescaling).
+            for (int i = 0; i < metadataRad.zenithBreaks.size(); ++i) {
+                dataRad[offset++] = float(doubleFromHalf(radianceTemp[i]) / zenithScale);
+            }
         }
 
-        valsRead = fread(radianceTemp.data(), sizeof(uint16), emphBreaksRad.size(), handle);
-        if (valsRead != emphBreaksRad.size())
+        // Read emphasize params.
+        valsRead = fread(radianceTemp.data(), sizeof(uint16), metadataRad.emphBreaks.size(), handle);
+        if (valsRead != metadataRad.emphBreaks.size())
             throw DatasetReadException("emphCoefsRad");
-        offset += unpackCoefsFromHalf(emphBreaksRad, radianceTemp, datasetRad, offset, 1.0);
+
+        // Unpack emphasize params from half.
+        for (int i = 0; i < metadataRad.emphBreaks.size(); ++i) {
+            dataRad[offset++] = float(doubleFromHalf(radianceTemp[i]));
+        }
     }
 }
 
@@ -371,88 +367,83 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
 }
 
 void PragueSkyModel::readPolarisation(FILE* handle) {
-    // Read metadata
+    // Read metadata.
 
     // Structure of the metadata part of the data file:
-    // rankPol (1 * int), sunBreaksCountPol (1 * int), sunBreaksPol (sunBreaksCountPol * double), zenithBreaksCountPol (1
-    // * int), zenithBreaksPol (zenithBreaksCountPol * double), empBreaksCountPol (1 * int), emphBreaksPol (empBreaksCountPol
-    // * double)
+    // rankPol              (1 * int), 
+    // sunBreaksCountPol    (1 * int), sunBreaksPol    (sunBreaksCountPol * double),
+    // zenithBreaksCountPol (1 * int), zenithBreaksPol (zenithBreaksCountPol * double), 
+    // empBreaksCountPol    (1 * int), emphBreaksPol   (empBreaksCountPol * double)
 
     int valsRead;
 
-    valsRead = fread(&rankPol, sizeof(int), 1, handle);
+    valsRead = fread(&metadataPol.rank, sizeof(int), 1, handle);
     if (valsRead != 1) {
         // Polarisation dataset not present
-        rankPol = 0;
+        metadataPol.rank = 0;
         return;
     }
 
     int sunBreaksCount = 0;
-    valsRead = fread(&sunBreaksCount, sizeof(int), 1, handle);
+    valsRead           = fread(&sunBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || sunBreaksCount < 1)
         throw DatasetReadException("sunBreaksCountPol");
 
-    sunBreaksPol.resize(sunBreaksCount);
-    valsRead       = fread(sunBreaksPol.data(), sizeof(double), sunBreaksCount, handle);
+    metadataPol.sunBreaks.resize(sunBreaksCount);
+    valsRead = fread(metadataPol.sunBreaks.data(), sizeof(double), sunBreaksCount, handle);
     if (valsRead != sunBreaksCount)
         throw DatasetReadException("sunBreaksPol");
 
     int zenithBreaksCount = 0;
-    valsRead = fread(&zenithBreaksCount, sizeof(int), 1, handle);
+    valsRead              = fread(&zenithBreaksCount, sizeof(int), 1, handle);
     if (valsRead != 1 || zenithBreaksCount < 1)
         throw DatasetReadException("zenithBreaksCountPol");
 
-    zenithBreaksPol.resize(zenithBreaksCount);
-    valsRead          = fread(zenithBreaksPol.data(), sizeof(double), zenithBreaksCount, handle);
+    metadataPol.zenithBreaks.resize(zenithBreaksCount);
+    valsRead = fread(metadataPol.zenithBreaks.data(), sizeof(double), zenithBreaksCount, handle);
     if (valsRead != zenithBreaksCount)
         throw DatasetReadException("zenithBreaksPol");
 
-    // Calculate offsets and strides
+    // Calculate offsets and strides.
 
-    sunOffsetPol = 0;
-    sunStridePol = sunBreaksPol.size() + zenithBreaksPol.size();
+    metadataPol.sunOffset = 0;
+    metadataPol.sunStride = metadataPol.sunBreaks.size() + metadataPol.zenithBreaks.size();
 
-    zenithOffsetPol = sunOffsetPol + sunBreaksPol.size();
-    zenithStridePol = sunStridePol;
+    metadataPol.zenithOffset = metadataPol.sunOffset + metadataPol.sunBreaks.size();
+    metadataPol.zenithStride = metadataPol.sunStride;
 
-    totalCoefsSingleConfigPol =
-        sunOffsetPol + rankPol * sunStridePol; // this is for one specific configuration
-    totalCoefsAllConfigsPol = totalCoefsSingleConfigPol * totalConfigsRad;
+    metadataPol.totalCoefsSingleConfig =
+        metadataPol.sunOffset +
+        metadataPol.rank * metadataPol.sunStride; // this is for one specific configuration
+    metadataPol.totalCoefsAllConfigs = metadataPol.totalCoefsSingleConfig * totalConfigs;
 
-    // Read data
+    // Read data.
 
     // Structure of the data part of the data file:
-    // [[[[[[ sunCoefsPol (sunBreaksCountPol * float), zenithCoefsPol
-    // (zenithBreaksCountPol * float) ] * rankPol]
-    //   * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
+    // [[[[[[ sunCoefsPol       (sunBreaksCountPol * float), 
+    //        zenithCoefsPol (zenithBreaksCountPol * float) ] * rankPol] 
+    // * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
-    int offset               = 0;
-    datasetPol.resize(totalCoefsAllConfigsPol);
-    
-    std::vector<float> polarisationTemp;
-    polarisationTemp.resize(std::max(sunBreaksPol.size(), zenithBreaksPol.size()));
+    int offset = 0;
+    datasetPol.resize(metadataPol.totalCoefsAllConfigs);
 
-    for (int con = 0; con < totalConfigsRad; ++con) {
-        for (int tc = 0; tc < rankPol; ++tc) {
-            valsRead = fread(polarisationTemp.data(), sizeof(float), sunBreaksPol.size(), handle);
-            if (valsRead != sunBreaksPol.size())
+    for (int con = 0; con < totalConfigs; ++con) {
+        for (int r = 0; r < metadataPol.rank; ++r) {
+            // Read sun params.
+            valsRead = fread(datasetPol.data() + offset, sizeof(float), metadataPol.sunBreaks.size(), handle);
+            if (valsRead != metadataPol.sunBreaks.size())
                 throw DatasetReadException("sunCoefsPol");
-            offset += unpackCoefsFromFloat(sunBreaksPol,
-                                           polarisationTemp,
-                                           datasetPol,
-                                           offset);
+            offset += metadataPol.sunBreaks.size();
 
-            valsRead = fread(polarisationTemp.data(), sizeof(float), zenithBreaksPol.size(), handle);
-            if (valsRead != zenithBreaksPol.size())
+            // Read zenith params.
+            valsRead =
+                fread(datasetPol.data() + offset, sizeof(float), metadataPol.zenithBreaks.size(), handle);
+            if (valsRead != metadataPol.zenithBreaks.size())
                 throw DatasetReadException("zenithCoefsPol");
-            offset += unpackCoefsFromFloat(zenithBreaksPol,
-                                           polarisationTemp,
-                                           datasetPol,
-                                           offset);
+            offset += metadataPol.zenithBreaks.size();
         }
     }
 }
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -470,7 +461,6 @@ PragueSkyModel::PragueSkyModel(const std::string& filename) {
         throw DatasetNotFoundException(filename);
     }
 }
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -572,79 +562,22 @@ PragueSkyModel::Parameters PragueSkyModel::computeParameters(const Vector3& view
 }
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////
-// Parameters
+// Model evaluation for sky radiance and polarisation
 /////////////////////////////////////////////////////////////////////////////////////
 
-void findInArray(const std::vector<float>& arr, const double value, int& index, int& inc, double& w) {
-    inc = 0.0;
-    if (value <= arr.front()) {
-        index = 0.0;
-        w     = 1.0;
-    } else if (value >= arr.back()) {
-        index = arr.size() - 1;
-        w     = 0.0;
-    } else {
-        for (int i = 1; i < arr.size(); i++) {
-            if (value < arr[i]) {
-                index = i - 1;
-                inc   = 1;
-                w     = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
-                assert(w >= 0.0 && w <= 1.0);
-                return;
-            }
-        }
-    }
+/// Evaluates piecewise linear approximation
+double evalPL(const std::vector<float>::const_iterator coefs, const double factor) {
+    return (double(coefs[1]) - double(coefs[0])) * factor + double(coefs[0]);
 }
 
-double mapParameter(const double param,  const std::vector<double>& values) {
-    double mapped = 0.0;
-
-    if (param < values.front()) {
-        mapped = 0.0;
-    } else if (param > values.back()) {
-        mapped = (double)values.size() - 1.0;
-    } else {
-        for (int v = 0; v < values.size(); ++v) {
-            const double val = values[v];
-            if (std::abs(val - param) < 1e-6) {
-                mapped = v;
-                break;
-            } else if (param < val) {
-                mapped = v - ((val - param) / (val - values[v - 1]));
-                break;
-            }
-        }
-    }
-
-    return mapped;
-}
-
-int findSegment(const double x, const std::vector<double>& breaks) {
-    int segment = 0;
-    for (segment = 0; segment < breaks.size(); ++segment) {
-        if (breaks[segment + 1] >= x)
-            break;
-    }
-    return segment;
-}
-
-double evalPP(const double x, const int segment, const std::vector<double>& breaks, const std::vector<float>::const_iterator coefs) {
-	const double x0 = x - breaks[segment];
-	const std::vector<float>::const_iterator sc = coefs + segment; // segment coefs
-    const double a = (double(sc[1]) - double(sc[0])) / (breaks[segment + 1] - breaks[segment]);
-    const double b = double(sc[0]);
-	return a * x0 + b;
-}
-
-std::vector<float>::const_iterator PragueSkyModel::controlParams(const std::vector<float>& dataset,
-                                                                 const int totalCoefsSingleConfig,
-                                                                 const int elevation,
-                                                                 const int altitude,
-                                                                 const int visibility,
-                                                                 const int albedo,
-                                                                 const int wavelength) const {
+std::vector<float>::const_iterator PragueSkyModel::getCoefficients(const std::vector<float>& dataset,
+                                                                   const int totalCoefsSingleConfig,
+                                                                   const int elevation,
+                                                                   const int altitude,
+                                                                   const int visibility,
+                                                                   const int albedo,
+                                                                   const int wavelength) const {
     return dataset.cbegin() +
            (totalCoefsSingleConfig *
             (wavelength + channels * elevation + channels * elevationsRad.size() * altitude +
@@ -652,296 +585,132 @@ std::vector<float>::const_iterator PragueSkyModel::controlParams(const std::vect
              channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibility));
 }
 
-double PragueSkyModel::reconstruct(const double                             gamma,
-                                   const double                             alpha,
-                                   const double                             zero,
-                                   const int                                gammaSegment,
-                                   const int                                alphaSegment,
-                                   const int                                zeroSegment,
-                                   const std::vector<float>::const_iterator controlParams) const {
-    double res = 0.0;
-    for (int t = 0; t < rankRad; ++t) {
-        const double sunVal =
-            evalPP(gamma, gammaSegment, sunBreaksRad, controlParams + sunOffsetRad + t * sunStrideRad);
-        const double zenithVal = evalPP(alpha,
-                                        alphaSegment,
-                                        zenithBreaksRad,
-                                        controlParams + zenithOffsetRad + t * zenithStrideRad);
-        res += sunVal * zenithVal;
-    }
-    const double emphVal = evalPP(zero, zeroSegment, emphBreaksRad, controlParams + emphOffsetRad);
-    res *= emphVal;
+PragueSkyModel::InterpolationParameter PragueSkyModel::getInterpolationParameter(
+    const double               queryVal,
+    const std::vector<double>& breaks) const {
+    // Clamp the value to the valid range.
+    const double clamped = std::clamp(queryVal, breaks.front(), breaks.back());
 
-    return std::max(res, 0.0);
+    // Get the nearest greater parameter value.
+    const auto next = std::upper_bound(breaks.cbegin() + 1, breaks.cend(), clamped);
+
+    // Compute the index and float factor.
+    InterpolationParameter parameter;
+    parameter.index = int(next - breaks.cbegin()) - 1;
+    if (next == breaks.cend()) {
+        parameter.factor = 0.0;
+    } else {
+        parameter.factor = (clamped - *(next - 1)) / (*next - *(next - 1));
+    }
+
+    assert(0 <= parameter.index && parameter.index < breaks.size() &&
+           (parameter.index < breaks.size() - 1 || parameter.factor == 0.f));
+    assert(0 <= parameter.factor && parameter.factor <= 1);
+    return parameter;
 }
 
-double PragueSkyModel::reconstructPol(const double                             gamma,
-                                      const double                             alpha,
-                                      const int                                gammaSegment,
-                                      const int                                alphaSegment,
-                                      const std::vector<float>::const_iterator controlParams) const {
-    double res = 0;
-    for (int t = 0; t < rankPol; ++t) {
-        const double sunVal =
-            evalPP(gamma, gammaSegment, sunBreaksPol, controlParams + sunOffsetPol + t * sunStridePol);
-        const double zenithVal = evalPP(alpha,
-                                        alphaSegment,
-                                        zenithBreaksPol,
-                                        controlParams + zenithOffsetPol + t * zenithStridePol);
-        res += sunVal * zenithVal;
+double PragueSkyModel::reconstruct(const AngleParameters&                   radianceParameters,
+                                   const std::vector<float>::const_iterator channelParameters,
+                                   const Metadata&                          metadata) const {
+    // The original image was emphasized (for radiance only), re-parametrized into gamma-alpha space,
+    // decomposed into sum of rankRad outer products of 'sun' and 'zenith' vectors and these vectors were
+    // stored as piece-wise polynomial approximation. Here the process is reversed (for one point).
+
+    double result = 0.0;
+    for (int r = 0; r < metadata.rank; ++r) {
+        // Restore the right value in the 'sun' vector
+        const double sunParam = evalPL(channelParameters + metadata.sunOffset + r * metadata.sunStride +
+                                           radianceParameters.gamma.index,
+                                       radianceParameters.gamma.factor);
+
+        // Restore the right value in the 'zenith' vector
+        const double zenithParam = evalPL(channelParameters + metadata.zenithOffset +
+                                              r * metadata.zenithStride + radianceParameters.alpha.index,
+                                          radianceParameters.alpha.factor);
+
+        // Accumulate their "outer" product
+        result += sunParam * zenithParam;
     }
-    return res;
+
+    // De-emphasize (for radiance only)
+    if (!metadata.emphBreaks.empty()) {
+        const double emphParam =
+            evalPL(channelParameters + metadata.emphOffset + radianceParameters.zero.index,
+                   radianceParameters.zero.factor);
+        result *= emphParam;
+        result = std::max(result, 0.0);
+    }
+
+    return result;
 }
 
+double PragueSkyModel::evaluateModel(const Parameters&         params,
+                                     const double              wavelength,
+                                     const std::vector<float>& data,
+                                     const Metadata&           metadata) const {
+    // Ignore wavelengths outside the dataset range.
+    if (wavelength < channelStart || wavelength >= (channelStart + channels * channelWidth)) {
+        return 0.0;
+    }
+    // Don't interpolate wavelengths inside the dataset range.
+    const int channelIndex = int(floor((wavelength - channelStart) / channelWidth));
+
+    // Translate angle values to indices and interpolation factors.
+    AngleParameters angleParameters;
+    angleParameters.gamma = getInterpolationParameter(params.gamma, metadata.sunBreaks);
+    if (!metadata.emphBreaks.empty()) { // for radiance
+        angleParameters.alpha =
+            getInterpolationParameter(params.elevation < 0.0 ? params.shadow : params.zero,
+                                      metadata.zenithBreaks);
+        angleParameters.zero = getInterpolationParameter(params.zero, metadata.emphBreaks);
+    } else { // for polarisation
+        angleParameters.alpha = getInterpolationParameter(params.theta, metadata.zenithBreaks);
+    }
+
+    // Translate configuration values to indices and interpolation factors.
+    const InterpolationParameter visibilityParam =
+        getInterpolationParameter(params.visibility, visibilitiesRad);
+    const InterpolationParameter albedoParam   = getInterpolationParameter(params.albedo, albedosRad);
+    const InterpolationParameter altitudeParam = getInterpolationParameter(params.altitude, altitudesRad);
+    const InterpolationParameter elevationParam =
+        getInterpolationParameter(radiansToDegrees(params.elevation), elevationsRad);
+
+    // Prepare parameters controlling the interpolation.
+    ControlParameters controlParameters;
+    for (int i = 0; i < 16; ++i) {
+        const int visibilityIndex = std::min(visibilityParam.index + i / 8, int(visibilitiesRad.size() - 1));
+        const int albedoIndex     = std::min(albedoParam.index + (i % 8) / 4, int(albedosRad.size() - 1));
+        const int altitudeIndex   = std::min(altitudeParam.index + (i % 4) / 2, int(altitudesRad.size() - 1));
+        const int elevationIndex  = std::min(elevationParam.index + i % 2, int(elevationsRad.size() - 1));
+
+        controlParameters.coefficients[i] = getCoefficients(data,
+                                                            metadata.totalCoefsSingleConfig,
+                                                            elevationIndex,
+                                                            altitudeIndex,
+                                                            visibilityIndex,
+                                                            albedoIndex,
+                                                            channelIndex);
+    }
+    controlParameters.interpolationFactor[0] = visibilityParam.factor;
+    controlParameters.interpolationFactor[1] = albedoParam.factor;
+    controlParameters.interpolationFactor[2] = altitudeParam.factor;
+    controlParameters.interpolationFactor[3] = elevationParam.factor;
+
+    // Interpolate.
+    const double result = interpolate<0, 0>(angleParameters, controlParameters, metadata);
+    assert(metadata.emphBreaks.empty() || result >= 0.0); // polarisation can be negative
+
+    return result;
+}
 
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Sky radiance
 /////////////////////////////////////////////////////////////////////////////////////
 
-double PragueSkyModel::interpolateElevation(double elevation,
-                                            int    altitude,
-                                            int    visibility,
-                                            int    albedo,
-                                            int    wavelength,
-                                            double gamma,
-                                            double alpha,
-                                            double zero,
-                                            int    gammaSegment,
-                                            int    alphaSegment,
-                                            int    zeroSegment) const {
-    const int    elevationLow = (int)elevation;
-    const double factor       = elevation - (double)elevationLow;
-
-    const std::vector<float>::const_iterator controlParamsLow = controlParams(datasetRad,
-                                                                              totalCoefsSingleConfigRad,
-                                                                              elevationLow,
-                                                                              altitude,
-                                                                              visibility,
-                                                                              albedo,
-                                                                              wavelength);
-
-    double resLow =
-        reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsLow);
-
-    if (factor < 1e-6 || elevationLow >= (elevationsRad.size() - 1)) {
-        return resLow;
-    }
-
-    const std::vector<float>::const_iterator controlParamsHigh = controlParams(datasetRad,
-                                                                               totalCoefsSingleConfigRad,
-                                                                               elevationLow + 1,
-                                                                               altitude,
-                                                                               visibility,
-                                                                               albedo,
-                                                                               wavelength);
-
-    double resHigh =
-        reconstruct(gamma, alpha, zero, gammaSegment, alphaSegment, zeroSegment, controlParamsHigh);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateAltitude(double elevation,
-                                           double altitude,
-                                           int    visibility,
-                                           int    albedo,
-                                           int    wavelength,
-                                           double gamma,
-                                           double alpha,
-                                           double zero,
-                                           int    gammaSegment,
-                                           int    alphaSegment,
-                                           int    zeroSegment) const {
-    const int    altitudeLow = (int)altitude;
-    const double factor      = altitude - (double)altitudeLow;
-
-    double resLow = interpolateElevation(elevation,
-                                         altitudeLow,
-                                         visibility,
-                                         albedo,
-                                         wavelength,
-                                         gamma,
-                                         alpha,
-                                         zero,
-                                         gammaSegment,
-                                         alphaSegment,
-                                         zeroSegment);
-
-    if (factor < 1e-6 || altitudeLow >= (altitudesRad.size() - 1)) {
-        return resLow;
-    }
-
-    double resHigh = interpolateElevation(elevation,
-                                          altitudeLow + 1,
-                                          visibility,
-                                          albedo,
-                                          wavelength,
-                                          gamma,
-                                          alpha,
-                                          zero,
-                                          gammaSegment,
-                                          alphaSegment,
-                                          zeroSegment);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateVisibility(double elevation,
-                                             double altitude,
-                                             double visibility,
-                                             int    albedo,
-                                             int    wavelength,
-                                             double gamma,
-                                             double alpha,
-                                             double zero,
-                                             int    gammaSegment,
-                                             int    alphaSegment,
-                                             int    zeroSegment) const {
-    const int    visibilityLow = (int)visibility;
-    const double factor        = visibility - (double)visibilityLow;
-
-    double resLow = interpolateAltitude(elevation,
-                                        altitude,
-                                        visibilityLow,
-                                        albedo,
-                                        wavelength,
-                                        gamma,
-                                        alpha,
-                                        zero,
-                                        gammaSegment,
-                                        alphaSegment,
-                                        zeroSegment);
-
-    if (factor < 1e-6 || visibilityLow >= (visibilitiesRad.size() - 1)) {
-        return resLow;
-    }
-
-    double resHigh = interpolateAltitude(elevation,
-                                         altitude,
-                                         visibilityLow + 1,
-                                         albedo,
-                                         wavelength,
-                                         gamma,
-                                         alpha,
-                                         zero,
-                                         gammaSegment,
-                                         alphaSegment,
-                                         zeroSegment);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateAlbedo(double elevation,
-                                         double altitude,
-                                         double visibility,
-                                         double albedo,
-                                         int    wavelength,
-                                         double gamma,
-                                         double alpha,
-                                         double zero,
-                                         int    gammaSegment,
-                                         int    alphaSegment,
-                                         int    zeroSegment) const {
-    const int    albedoLow = (int)albedo;
-    const double factor    = albedo - (double)albedoLow;
-
-    double resLow = interpolateVisibility(elevation,
-                                          altitude,
-                                          visibility,
-                                          albedoLow,
-                                          wavelength,
-                                          gamma,
-                                          alpha,
-                                          zero,
-                                          gammaSegment,
-                                          alphaSegment,
-                                          zeroSegment);
-
-    if (factor < 1e-6 || albedoLow >= (albedosRad.size() - 1)) {
-        return resLow;
-    }
-
-    double resHigh = interpolateVisibility(elevation,
-                                           altitude,
-                                           visibility,
-                                           albedoLow + 1,
-                                           wavelength,
-                                           gamma,
-                                           alpha,
-                                           zero,
-                                           gammaSegment,
-                                           alphaSegment,
-                                           zeroSegment);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateWavelength(double elevation,
-                                             double altitude,
-                                             double visibility,
-                                             double albedo,
-                                             double wavelength,
-                                             double gamma,
-                                             double alpha,
-                                             double zero,
-                                             int    gammaSegment,
-                                             int    alphaSegment,
-                                             int    zeroSegment) const {
-    // Don't interpolate, use the bin it belongs to
-
-    return interpolateAlbedo(elevation,
-                             altitude,
-                             visibility,
-                             albedo,
-                             (int)wavelength,
-                             gamma,
-                             alpha,
-                             zero,
-                             gammaSegment,
-                             alphaSegment,
-                             zeroSegment);
-}
-
 double PragueSkyModel::skyRadiance(const Parameters& params, const double wavelength) const {
-    assert(wavelength > 0);
-
-    // Translate parameter values to indices
-
-    const double visibilityControl = mapParameter(params.visibility, visibilitiesRad);
-    const double albedoControl     = mapParameter(params.albedo, albedosRad);
-    const double altitudeControl   = mapParameter(params.altitude, altitudesRad);
-    const double elevationControl  = mapParameter(radiansToDegrees(params.elevation), elevationsRad);
-
-    const double channelControl = (wavelength - channelStart) / channelWidth;
-
-    if (channelControl >= channels || channelControl < 0.0)
-        return 0.0;
-
-    // Get params corresponding to the indices, reconstruct result and interpolate
-
-    const double alpha = params.elevation < 0.0 ? params.shadow : params.zero;
-
-    const int gammaSegment = findSegment(params.gamma, sunBreaksRad);
-    const int alphaSegment = findSegment(alpha, zenithBreaksRad);
-    const int zeroSegment  = findSegment(params.zero, emphBreaksRad);
-
-    const double res = interpolateWavelength(elevationControl,
-                                             altitudeControl,
-                                             visibilityControl,
-                                             albedoControl,
-                                             channelControl,
-                                             params.gamma,
-                                             alpha,
-                                             params.zero,
-                                             gammaSegment,
-                                             alphaSegment,
-                                             zeroSegment);
-
-    assert(res >= 0.0);
-    return res;
+	return evaluateModel(params, wavelength, dataRad, metadataRad);
 }
-
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -949,34 +718,76 @@ double PragueSkyModel::skyRadiance(const Parameters& params, const double wavele
 /////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::sunRadiance(const Parameters& params, const double wavelength) const {
-    assert(wavelength > 0);
+    // Ignore wavelengths outside the dataset range.
+    if (wavelength < SUN_RAD_START || wavelength >= SUN_RAD_END) {
+        return 0.0;
+    }
 
+    // Return zero for rays not hitting the sun.
     if (params.gamma > SUN_RADIUS) {
         return 0.0;
     }
 
-    double idx         = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
-    double sunRadiance = 0.0;
+    // Compute index into the sun radiance table.
+    const double idx = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
+    assert(idx >= 0 && idx < std::size(SUN_RAD_TABLE) - 1);
+    const int    idxInt   = floor(idx);
+    const double idxFloat = idx - floor(idx);
 
-    if (idx >= 0.0) {
-        int    lowIdx   = floor(idx);
-        double idxFloat = idx - floor(idx);
+    // Interpolate between the two closest values in the sun radiance table.
+    const double sunRadiance =
+        SUN_RAD_TABLE[idxInt] * (1.0 - idxFloat) + SUN_RAD_TABLE[idxInt + 1] * idxFloat;
+    assert(sunRadiance > 0.0);
 
-        sunRadiance = SUN_RAD_TABLE[lowIdx] * (1.0 - idxFloat) + SUN_RAD_TABLE[lowIdx + 1] * idxFloat;
-        assert(sunRadiance > 0.0);
-    }
-
-    double tau = PragueSkyModel::transmittance(params, wavelength, std::numeric_limits<double>::max());
+    // Compute transmittance towards the sun.
+    const double tau = PragueSkyModel::transmittance(params, wavelength, std::numeric_limits<double>::max());
     assert(tau >= 0.0 && tau <= 1.0);
 
+    // Combine.
     return sunRadiance * tau;
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////
+// Polarisation
+/////////////////////////////////////////////////////////////////////////////////////
+
+double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
+	// If no polarisation data available
+	if (metadataPol.rank == 0) {
+		throw NoPolarisationException();
+	}
+
+	return -evaluateModel(params, wavelength, datasetPol, metadataPol);
+}
 
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Transmittance
 /////////////////////////////////////////////////////////////////////////////////////
+
+void findInArray(const std::vector<float>& arr, const double value, int& index, int& inc, double& w) {
+	inc = 0.0;
+	if (value <= arr.front()) {
+		index = 0.0;
+		w = 1.0;
+	}
+	else if (value >= arr.back()) {
+		index = arr.size() - 1;
+		w = 0.0;
+	}
+	else {
+		for (int i = 1; i < arr.size(); i++) {
+			if (value < arr[i]) {
+				index = i - 1;
+				inc = 1;
+				w = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
+				assert(w >= 0.0 && w <= 1.0);
+				return;
+			}
+		}
+	}
+}
 
 bool circleBounds2D(double xV, double yV, double yC, double radius, double& d) {
     const double qa = (xV * xV) + (yV * yV);
@@ -1143,14 +954,14 @@ double PragueSkyModel::calcTransmittanceSVD(const double a,
     double wd   = (d * double(dDim)) - double(dInt);
     if (aInt < (aDim - 1)) {
         aInc = 1;
-        wa   = nonlinlerp(double(aInt) / double(aDim), double(aInt + aInc) / double(aDim), a, 3.0);
+        wa   = nonlerp(double(aInt) / double(aDim), double(aInt + aInc) / double(aDim), a, 3.0);
     } else {
         aInt = aDim - 1;
         wa   = 0;
     }
     if (dInt < (dDim - 1)) {
         dInc = 1;
-        wd   = nonlinlerp(double(dInt) / double(dDim), double(dInt + dInc) / double(dDim), d, 4.0);
+        wd   = nonlerp(double(dInt) / double(dDim), double(dInt + dInc) / double(dDim), d, 4.0);
     } else {
         dInt = dDim - 1;
         wd   = 0;
@@ -1243,203 +1054,4 @@ double PragueSkyModel::transmittance(const Parameters& params,
 
     assert(trans >= 0.0 && trans <= 1.0);
     return trans;
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-// Polarisation
-/////////////////////////////////////////////////////////////////////////////////////
-
-double PragueSkyModel::interpolateElevationPol(double elevation,
-                                               int    altitude,
-                                               int    visibility,
-                                               int    albedo,
-                                               int    wavelength,
-                                               double gamma,
-                                               double alpha,
-                                               int    gammaSegment,
-                                               int    alphaSegment) const {
-    const int    elevationLow = (int)elevation;
-    const double factor        = elevation - (double)elevationLow;
-
-    const std::vector<float>::const_iterator controlParamsLow = controlParams(datasetPol,
-                                                                              totalCoefsSingleConfigPol,
-                                                                              elevationLow,
-                                                                              altitude,
-                                                                              visibility,
-                                                                              albedo,
-                                                                              wavelength);
-
-    double resLow = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsLow);
-
-    if (factor < 1e-6 || elevationLow >= (elevationsRad.size() - 1)) {
-        return resLow;
-    }
-
-    const std::vector<float>::const_iterator controlParamsHigh = controlParams(datasetPol,
-                                                                               totalCoefsSingleConfigPol,
-                                                                               elevationLow + 1,
-                                                                               altitude,
-                                                                               visibility,
-                                                                               albedo,
-                                                                               wavelength);
-
-    double resHigh = reconstructPol(gamma, alpha, gammaSegment, alphaSegment, controlParamsHigh);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateAltitudePol(double elevation,
-                                              double altitude,
-                                              int    visibility,
-                                              int    albedo,
-                                              int    wavelength,
-                                              double gamma,
-                                              double alpha,
-                                              int    gammaSegment,
-                                              int    alphaSegment) const {
-    const int    altitudeLow = (int)altitude;
-    const double factor       = altitude - (double)altitudeLow;
-
-    double resLow = interpolateElevationPol(elevation,
-                                             altitudeLow,
-                                             visibility,
-                                             albedo,
-                                             wavelength,
-                                             gamma,
-                                             alpha,
-                                             gammaSegment,
-                                             alphaSegment);
-
-    if (factor < 1e-6 || altitudeLow >= (altitudesRad.size() - 1)) {
-        return resLow;
-    }
-
-    double resHigh = interpolateElevationPol(elevation,
-                                              altitudeLow + 1,
-                                              visibility,
-                                              albedo,
-                                              wavelength,
-                                              gamma,
-                                              alpha,
-                                              gammaSegment,
-                                              alphaSegment);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateVisibilityPol(double elevation,
-                                                double altitude,
-                                                double visibility,
-                                                int    albedo,
-                                                int    wavelength,
-                                                double gamma,
-                                                double alpha,
-                                                int    gammaSegment,
-                                                int    alphaSegment) const {
-    // Ignore visibility
-
-    return interpolateAltitudePol(elevation,
-                                  altitude,
-                                  (int)visibility,
-                                  albedo,
-                                  wavelength,
-                                  gamma,
-                                  alpha,
-                                  gammaSegment,
-                                  alphaSegment);
-}
-
-double PragueSkyModel::interpolateAlbedoPol(double elevation,
-                                            double altitude,
-                                            double visibility,
-                                            double albedo,
-                                            int    wavelength,
-                                            double gamma,
-                                            double alpha,
-                                            int    gammaSegment,
-                                            int    alphaSegment) const {
-    const int    albedoLow = (int)albedo;
-    const double factor     = albedo - (double)albedoLow;
-
-    double resLow = interpolateVisibilityPol(elevation,
-                                              altitude,
-                                              visibility,
-                                              albedoLow,
-                                              wavelength,
-                                              gamma,
-                                              alpha,
-                                              gammaSegment,
-                                              alphaSegment);
-
-    if (factor < 1e-6 || albedoLow >= (albedosRad.size() - 1)) {
-        return resLow;
-    }
-
-    double resHigh = interpolateVisibilityPol(elevation,
-                                               altitude,
-                                               visibility,
-                                               albedoLow + 1,
-                                               wavelength,
-                                               gamma,
-                                               alpha,
-                                               gammaSegment,
-                                               alphaSegment);
-
-    return lerp(resLow, resHigh, factor);
-}
-
-double PragueSkyModel::interpolateWavelengthPol(double elevation,
-                                                double altitude,
-                                                double visibility,
-                                                double albedo,
-                                                double wavelength,
-                                                double gamma,
-                                                double alpha,
-                                                int    gammaSegment,
-                                                int    alphaSegment) const {
-    // Don't interpolate, use the bin it belongs to
-
-    return interpolateAlbedoPol(elevation,
-                                altitude,
-                                visibility,
-                                albedo,
-                                (int)wavelength,
-                                gamma,
-                                alpha,
-                                gammaSegment,
-                                alphaSegment);
-}
-
-double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
-    // If no polarisation data available
-    if (rankPol == 0) {
-        throw NoPolarisationException();
-    }
-
-    // Translate parameter values to indices
-
-    const double visibilityControl = mapParameter(params.visibility, visibilitiesRad);
-    const double albedoControl     = mapParameter(params.albedo, albedosRad);
-    const double altitudeControl   = mapParameter(params.altitude, altitudesRad);
-    const double elevationControl  = mapParameter(radiansToDegrees(params.elevation), elevationsRad);
-
-    const double channelControl = (wavelength - channelStart) / channelWidth;
-    if (channelControl >= channels || channelControl < 0.)
-        return 0.;
-
-    // Get params corresponding to the indices, reconstruct result and interpolate
-
-    const int gammaSegment = findSegment(params.gamma, sunBreaksPol);
-    const int thetaSegment = findSegment(params.theta, zenithBreaksPol);
-
-    return -interpolateWavelengthPol(elevationControl,
-                                     altitudeControl,
-                                     visibilityControl,
-                                     albedoControl,
-                                     channelControl,
-                                     params.gamma,
-                                     params.theta,
-                                     gammaSegment,
-                                     thetaSegment);
 }
