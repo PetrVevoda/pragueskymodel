@@ -8,15 +8,16 @@
 // Constants
 /////////////////////////////////////////////////////////////////////////////////////
 
-constexpr double PI              = 3.141592653589793;
-constexpr double RAD_TO_DEG      = 180.0 / PI;
-constexpr double PLANET_RADIUS   = 6378000.0;
-constexpr double SAFETY_ALTITUDE = 50.0;
-constexpr double SUN_RADIUS      = 0.004654793; // = 0.2667 degrees
-constexpr double DIST_TO_EDGE    = 1571524.413613; // Maximum distance to the edge of the atmosphere in the transmittance model
-constexpr double SUN_RAD_START   = 310;
-constexpr double SUN_RAD_STEP    = 1;
-constexpr double SUN_RAD_TABLE[] = {
+constexpr double PI               = 3.141592653589793;
+constexpr double RAD_TO_DEG       = 180.0 / PI;
+constexpr double PLANET_RADIUS    = 6378000.0;
+constexpr double SAFETY_ALTITUDE  = 50.0;
+constexpr double SUN_RADIUS       = 0.004654793; // = 0.2667 degrees
+constexpr double DIST_TO_EDGE     = 1571524.413613; // Maximum distance to the edge of the atmosphere in the transmittance model
+constexpr double ATMOSPHERE_WIDTH = 100000.0;
+constexpr double SUN_RAD_START    = 310;
+constexpr double SUN_RAD_STEP     = 1;
+constexpr double SUN_RAD_TABLE[]  = {
     9829.41, 10184.,  10262.6, 10375.7, 10276.,  10179.3, 10156.6, 10750.7, 11134.,  11463.6, 11860.4,
     12246.2, 12524.4, 12780.,  13187.4, 13632.4, 13985.9, 13658.3, 13377.4, 13358.3, 13239.,  13119.8,
     13096.2, 13184.,  13243.5, 13018.4, 12990.4, 13159.1, 13230.8, 13258.6, 13209.9, 13343.2, 13404.8,
@@ -67,7 +68,6 @@ constexpr double SUN_RAD_TABLE[] = {
     15114.6, 15076.8, 15034.6, 14992.9
 };
 constexpr double SUN_RAD_END = SUN_RAD_START + SUN_RAD_STEP * std::size(SUN_RAD_TABLE);
-constexpr int    SVD_RANK    = 12;
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -127,10 +127,6 @@ double nonlerp(const double a, const double b, const double w, const double p) {
     const double c1 = pow(a, p);
     const double c2 = pow(b, p);
     return ((pow(w, p) - c1) / (c2 - c1));
-}
-
-double clamp01(const double x) {
-    return (x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x));
 }
 
 
@@ -340,28 +336,37 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
     if (valsRead != 1 || rankTrans < 1)
         throw DatasetReadException("rankTrans");
 
+    std::vector<float> temp;
+    temp.resize(std::max(altitudesCount, visibilitiesCount));
+
     altitudesTrans.resize(altitudesCount);
-    valsRead               = fread(altitudesTrans.data(), sizeof(float), altitudesCount, handle);
+    valsRead = fread(temp.data(), sizeof(float), altitudesCount, handle);
     if (valsRead != altitudesCount)
         throw DatasetReadException("altitudesTrans");
+    for (int i = 0; i < altitudesCount; i++) {
+        altitudesTrans[i] = double(temp[i]);
+    }
 
     visibilitiesTrans.resize(visibilitiesCount);
-    valsRead               = fread(visibilitiesTrans.data(), sizeof(float), visibilitiesCount, handle);
+    valsRead = fread(temp.data(), sizeof(float), visibilitiesCount, handle);
     if (valsRead != visibilitiesCount)
         throw DatasetReadException("visibilitiesTrans");
+    for (int i = 0; i < visibilitiesCount; i++) {
+        visibilitiesTrans[i] = double(temp[i]);
+    }
 
     const int totalCoefsU = dDim * aDim * rankTrans * altitudesTrans.size();
     const int totalCoefsV = visibilitiesTrans.size() * rankTrans * 11 * altitudesTrans.size();
 
     // Read data
 
-    datasetTransU.resize(totalCoefsU);
-    valsRead               = fread(datasetTransU.data(), sizeof(float), totalCoefsU, handle);
+    dataTransU.resize(totalCoefsU);
+    valsRead = fread(dataTransU.data(), sizeof(float), totalCoefsU, handle);
     if (valsRead != totalCoefsU)
         throw DatasetReadException("datasetTransU");
 
-    datasetTransV.resize(totalCoefsV);
-    valsRead               = fread(datasetTransV.data(), sizeof(float), totalCoefsV, handle);
+    dataTransV.resize(totalCoefsV);
+    valsRead = fread(dataTransV.data(), sizeof(float), totalCoefsV, handle);
     if (valsRead != totalCoefsV)
         throw DatasetReadException("datasetTransV");
 }
@@ -425,19 +430,18 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     // * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
     int offset = 0;
-    datasetPol.resize(metadataPol.totalCoefsAllConfigs);
+    dataPol.resize(metadataPol.totalCoefsAllConfigs);
 
     for (int con = 0; con < totalConfigs; ++con) {
         for (int r = 0; r < metadataPol.rank; ++r) {
             // Read sun params.
-            valsRead = fread(datasetPol.data() + offset, sizeof(float), metadataPol.sunBreaks.size(), handle);
+            valsRead = fread(dataPol.data() + offset, sizeof(float), metadataPol.sunBreaks.size(), handle);
             if (valsRead != metadataPol.sunBreaks.size())
                 throw DatasetReadException("sunCoefsPol");
             offset += metadataPol.sunBreaks.size();
 
             // Read zenith params.
-            valsRead =
-                fread(datasetPol.data() + offset, sizeof(float), metadataPol.zenithBreaks.size(), handle);
+            valsRead = fread(dataPol.data() + offset, sizeof(float), metadataPol.zenithBreaks.size(), handle);
             if (valsRead != metadataPol.zenithBreaks.size())
                 throw DatasetReadException("zenithCoefsPol");
             offset += metadataPol.zenithBreaks.size();
@@ -580,7 +584,7 @@ std::vector<float>::const_iterator PragueSkyModel::getCoefficients(const std::ve
                                                                    const int wavelength) const {
     return dataset.cbegin() +
            (totalCoefsSingleConfig *
-            (wavelength + channels * elevation + channels * elevationsRad.size() * altitude +
+            (wavelength + size_t(channels) * elevation + channels * elevationsRad.size() * altitude +
              channels * elevationsRad.size() * altitudesRad.size() * albedo +
              channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibility));
 }
@@ -753,12 +757,12 @@ double PragueSkyModel::sunRadiance(const Parameters& params, const double wavele
 /////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
-	// If no polarisation data available
-	if (metadataPol.rank == 0) {
-		throw NoPolarisationException();
-	}
+    // If no polarisation data available
+    if (metadataPol.rank == 0) {
+        throw NoPolarisationException();
+    }
 
-	return -evaluateModel(params, wavelength, datasetPol, metadataPol);
+    return -evaluateModel(params, wavelength, dataPol, metadataPol);
 }
 
 
@@ -766,292 +770,230 @@ double PragueSkyModel::polarisation(const Parameters& params, const double wavel
 // Transmittance
 /////////////////////////////////////////////////////////////////////////////////////
 
-void findInArray(const std::vector<float>& arr, const double value, int& index, int& inc, double& w) {
-	inc = 0.0;
-	if (value <= arr.front()) {
-		index = 0.0;
-		w = 1.0;
-	}
-	else if (value >= arr.back()) {
-		index = arr.size() - 1;
-		w = 0.0;
-	}
-	else {
-		for (int i = 1; i < arr.size(); i++) {
-			if (value < arr[i]) {
-				index = i - 1;
-				inc = 1;
-				w = (value - arr[i - 1]) / (arr[i] - arr[i - 1]); // Assume linear
-				assert(w >= 0.0 && w <= 1.0);
-				return;
-			}
-		}
-	}
+std::vector<float>::const_iterator PragueSkyModel::getCoefficientsTrans(const int visibility,
+                                                                        const int altitude,
+                                                                        const int wavelength) const {
+    return dataTransV.cbegin() +
+           ((visibility * altitudesTrans.size() + altitude) * channels + wavelength) * rankTrans;
 }
 
-bool circleBounds2D(double xV, double yV, double yC, double radius, double& d) {
-    const double qa = (xV * xV) + (yV * yV);
-    const double qb = 2.0 * yC * yV;
-    const double qc = (yC * yC) - (radius * radius);
-    double n  = (qb * qb) - (4.0 * qa * qc);
-    if (n <= 0) {
-        return false;
+std::vector<float>::const_iterator PragueSkyModel::getCoefficientsTransBase(const int altitude,
+                                                                            const int a,
+                                                                            const int d) const {
+    return dataTransU.cbegin() + size_t(altitude) * aDim * dDim * rankTrans +
+           (size_t(d) * aDim + a) * rankTrans;
+}
+
+/// Intersects the given ray (assuming rayPosX == 0) with a circle at origin with the given radius.
+/// \return In the case the ray intersects the circle, distance to the circle is returned, otherwise the
+///         function returns negative number.
+double intersectRayWithCircle2D(const double rayDirX,
+                                const double rayDirY,
+                                const double rayPosY,
+                                const double circleRadius) {
+    assert(rayPosY > 0.0);
+    assert(circleRadius > 0.0);
+
+    // Compute discriminant
+    const double qA      = rayDirX * rayDirX + rayDirY * rayDirY;
+    const double qB      = 2.0 * rayPosY * rayDirY;
+    const double qC      = rayPosY * rayPosY - circleRadius * circleRadius;
+    double       discrim = qB * qB - 4.0 * qA * qC;
+
+    // No intersection or touch only
+    if (discrim <= 0.0) {
+        return -1.0;
     }
-    n  = sqrt(n);
-    const float d1 = (-qb + n) / (2.0 * qa);
-    const float d2 = (-qb - n) / (2.0 * qa);
-    d = (d1 > 0 && d2 > 0) ? (d1 < d2 ? d1 : d2) : (d1 > d2 ? d1 : d2);
-    if (d <= 0) {
-        return false;
+
+    discrim = std::sqrt(discrim);
+
+    // Compute distances to both intersections
+    const double d1 = (-qB + discrim) / (2.0 * qA);
+    const double d2 = (-qB - discrim) / (2.0 * qA);
+
+    // Try to take the nearest positive one
+    const double distToIsect = (d1 > 0.0 && d2 > 0.0) ? std::min(d1, d2) : std::max(d1, d2);
+    return distToIsect;
+}
+
+/// Auxiliary function for \ref toTransmittanceParams. Computes [altitude, distance] parameters from
+/// coordinates of intersection of view ray and ground or atmosphere edge. Note: using floats here instead of
+/// doubles will cause banding artifacts.
+std::tuple<double, double> isectToAltitudeDistance(const double isectX, const double isectY) {
+    // Distance to the intersection from world origin (not along ray as distToIsect in the calling method).
+    const double isectDist = std::sqrt(isectX * isectX + isectY * isectY);
+    assert(isectDist > 0.0);
+
+    // Compute normalized and non-linearly scaled position in the atmosphere
+    double altitude = std::clamp(isectDist - PLANET_RADIUS, 0.0, ATMOSPHERE_WIDTH);
+    altitude        = std::pow(altitude / ATMOSPHERE_WIDTH, 1.0 / 3.0);
+    double distance = std::acos(isectY / isectDist) * PLANET_RADIUS;
+    distance        = std::sqrt(distance / DIST_TO_EDGE);
+    distance        = std::sqrt(distance); // Calling twice sqrt, since it is faster than pow(...,0.25)
+    distance        = std::min(1.0, distance);
+    assert(0.0 <= altitude && altitude <= 1.0);
+    assert(0.0 <= distance && distance <= 1.0);
+
+    return std::make_tuple(altitude, distance);
+}
+
+PragueSkyModel::InterpolationParameter PragueSkyModel::getInterpolationParameterTrans(const double value,
+                                                                                      const int    paramCount,
+                                                                                      const int power) const {
+    InterpolationParameter param;
+    param.index  = std::min(int(value * paramCount), paramCount - 1);
+    param.factor = 0.0;
+    if (param.index < paramCount - 1) {
+        param.factor =
+            nonlerp(double(param.index) / paramCount, double(param.index + 1) / paramCount, value, power);
+        param.factor = std::clamp(param.factor, 0.0, 1.0);
     }
-    return true;
+    return param;
 }
 
-void scaleAD(double xP, double yP, double& a, double& d) {
-    const double n = sqrt((xP * xP) + (yP * yP));
-    a = n - PLANET_RADIUS;
-    a = a > 0.0 ? a : 0.0;
-    a = pow(a / 100000.0, 1.0 / 3.0);
-    d = acos(yP / n) * PLANET_RADIUS;
-    d = d / DIST_TO_EDGE;
-    d = pow(d, 0.25);
-    d = d > 1.0 ? 1.0 : d;
-	assert(a >= 0.0);
-	assert(d >= 0.0);
-}
+PragueSkyModel::TransmittanceParameters PragueSkyModel::toTransmittanceParams(const double theta,
+                                                                              const double distance,
+                                                                              const double altitude) const {
+    assert(theta >= 0.0 && theta <= PI);
+    assert(distance >= 0.0);
+    assert(altitude >= 0.0);
 
-void toAD(double theta, double distance, double altitude, double& a, double& d) {
-    // Ray circle intersection
-    double xV       = sin(theta);
-    double yV       = cos(theta);
-    double yC       = PLANET_RADIUS + altitude;
-    double atmoEdge = PLANET_RADIUS + 90000;
-    double n;
-    if (altitude < 0.001) // Handle altitudes close to 0 separately to avoid reporting
-                          // intersections on the other side of the planet
-    {
+    const double rayDirX = sin(theta);
+    const double rayDirY = cos(theta);
+    const double rayPosY = PLANET_RADIUS + altitude; // rayPosX == 0
+
+    constexpr double ATMOSPHERE_EDGE = PLANET_RADIUS + ATMOSPHERE_WIDTH;
+
+    // Find intersection of the ground-to-sun ray with edge of the atmosphere (in 2D)
+    double           distToIsect  = -1.0;
+    constexpr double LOW_ALTITUDE = 0.3;
+    if (altitude < LOW_ALTITUDE) {
+        // Special handling of almost zero altitude case to avoid numerical issues.
         if (theta <= 0.5 * PI) {
-            if (!circleBounds2D(xV, yV, yC, atmoEdge, n)) {
-                // Then we have a problem!
-                // Return something, but this should never happen so long as the camera
-                // is inside the atmosphere Which it should be in this work
-                a = 0;
-                d = 0;
-                return;
-            }
+            distToIsect = intersectRayWithCircle2D(rayDirX, rayDirY, rayPosY, ATMOSPHERE_EDGE);
         } else {
-            n = 0;
+            distToIsect = 0.0;
         }
     } else {
-        if (circleBounds2D(xV, yV, yC, PLANET_RADIUS, n)) // Check for planet intersection
-        {
-            if (n <= distance) // We do intersect the planet so return a and d at the
-                               // surface
-            {
-                const double xP = xV * n;
-                const double yP = (yV * n) + PLANET_RADIUS + altitude;
-                scaleAD(xP, yP, a, d);
-                return;
+        distToIsect = intersectRayWithCircle2D(rayDirX, rayDirY, rayPosY, PLANET_RADIUS);
+        if (distToIsect < 0.0) {
+            distToIsect = intersectRayWithCircle2D(rayDirX, rayDirY, rayPosY, ATMOSPHERE_EDGE);
+        }
+    }
+    // The ray should always hit either the edge of the atmosphere or the planet (we are starting inside the
+    // atmosphere).
+    assert(distToIsect >= 0.0);
+
+    distToIsect = std::min(distToIsect, distance);
+
+    // Compute intersection coordinates
+    const double isectX = rayDirX * distToIsect;
+    const double isectY = rayDirY * distToIsect + rayPosY;
+
+    // Get the internal [altitude, distance] parameters
+    const auto [altitudeParam, distanceParam] = isectToAltitudeDistance(isectX, isectY);
+
+    // Convert to interpolation parameters
+    TransmittanceParameters params;
+    params.altitude = getInterpolationParameterTrans(altitudeParam, aDim, 3);
+    params.distance = getInterpolationParameterTrans(distanceParam, dDim, 4);
+
+    return params;
+}
+
+double PragueSkyModel::reconstructTrans(const int                     visibilityIndex,
+                                        const int                     altitudeIndex,
+                                        const TransmittanceParameters transParams,
+                                        const int                     channelIndex) const {
+    const std::vector<float>::const_iterator coefs =
+        getCoefficientsTrans(visibilityIndex, altitudeIndex, channelIndex);
+
+    // Load transmittance values for bi-linear interpolation
+    std::array<double, 4> transmittance = { 0.0, 0.0, 0.0, 0.0 };
+    int                   index         = 0;
+    for (int a = transParams.altitude.index; a <= transParams.altitude.index + 1; ++a) {
+        if (a < aDim) {
+            for (int d = transParams.distance.index; d <= transParams.distance.index + 1; ++d) {
+                if (d < dDim) {
+                    const std::vector<float>::const_iterator baseCoefs =
+                        getCoefficientsTransBase(altitudeIndex, a, d);
+                    for (int i = 0; i < rankTrans; ++i) {
+                        // Reconstruct transmittance value
+                        transmittance[index] += double(baseCoefs[i]) * double(coefs[i]);
+                    }
+                    index++;
+                }
             }
         }
-        if (!circleBounds2D(xV, yV, yC, atmoEdge, n)) {
-            // Then we have a problem!
-            // Return something, but this should never happen so long as the camera is
-            // inside the atmosphere Which it should be in this work
-            a = 0;
-            d = 0;
-            return;
-        }
     }
-    double distanceCorrected = n;
-    // Use the smaller of the distances
-    distanceCorrected = distance < distanceCorrected ? distance : distanceCorrected;
-    // Points in world space
-    const double xP = xV * distanceCorrected;
-    const double yP = (yV * distanceCorrected) + PLANET_RADIUS + altitude;
-    scaleAD(xP, yP, a, d);
+
+    // Perform bi-linear interpolation
+    if (transParams.distance.factor > 0.f) {
+        transmittance[0] = lerp(transmittance[0], transmittance[1], transParams.distance.factor);
+        transmittance[1] = lerp(transmittance[2], transmittance[3], transParams.distance.factor);
+    }
+    transmittance[0] = std::max(transmittance[0], 0.0);
+
+    if (transParams.altitude.factor > 0.f) {
+        transmittance[1] = std::max(transmittance[1], 0.0);
+        transmittance[0] = lerp(transmittance[0], transmittance[1], transParams.altitude.factor);
+    }
+
+    assert(transmittance[0] > 0.0);
+    return transmittance[0];
 }
 
-std::vector<float>::const_iterator PragueSkyModel::transmittanceCoefsIndex(const int visibility,
-                                                                           const int altitude,
-                                                                           const int wavelength) const {
-    int transmittanceValuesPerVisibility = rankTrans * 11 * altitudesTrans.size();
-    return datasetTransV.cbegin() + (visibility * transmittanceValuesPerVisibility) +
-           (((altitude * 11) + wavelength) * rankTrans);
-}
+double PragueSkyModel::interpolateTrans(const int                     visibilityIndex,
+                                        const InterpolationParameter  altitudeParam,
+                                        const TransmittanceParameters transParams,
+                                        const int                     channelIndex) const {
+    // Get transmittance for the nearest lower altitude.
+    double trans = reconstructTrans(visibilityIndex, altitudeParam.index, transParams, channelIndex);
 
-void PragueSkyModel::transmittanceInterpolateWaveLength(const int    visibility,
-                                                        const int    altitude,
-                                                        const int    wavelengthLow,
-                                                        const int    wavelengthInc,
-                                                        const double wavelengthW,
-                                                        double*      coefficients) const {
-    const std::vector<float>::const_iterator wll =
-        transmittanceCoefsIndex(visibility, altitude, wavelengthLow);
-    const std::vector<float>::const_iterator wlu =
-        transmittanceCoefsIndex(visibility, altitude, wavelengthLow + wavelengthInc);
-    for (int i = 0; i < rankTrans; i++) {
-        coefficients[i] = lerp(wll[i], wlu[i], wavelengthW);
+    // Interpolate with transmittance for the nearest higher altitude if needed.
+    if (altitudeParam.factor > 0.0) {
+        const double transHigh =
+            reconstructTrans(visibilityIndex, altitudeParam.index + 1, transParams, channelIndex);
+        trans = lerp(trans, transHigh, altitudeParam.factor);
     }
-}
 
-double PragueSkyModel::calcTransmittanceSVDAltitude(const int    visibility,
-                                                    const int    altitude,
-                                                    const int    wavelengthLow,
-                                                    const int    wavelengthInc,
-                                                    const double wavelengthFactor,
-                                                    const int    aInt,
-                                                    const int    dInt,
-                                                    const int    aInc,
-                                                    const int    dInc,
-                                                    const double wa,
-                                                    const double wd) const {
-    std::array<float, 4>         t = { 0.0, 0.0, 0.0, 0.0 };
-    std::array<double, SVD_RANK> interpolatedCoefficients;
-    transmittanceInterpolateWaveLength(visibility,
-                                       altitude,
-                                       wavelengthLow,
-                                       wavelengthInc,
-                                       wavelengthFactor,
-                                       interpolatedCoefficients.data());
-    int index = 0;
-    // Calculate pow space values
-    for (int al = aInt; al <= aInt + aInc; al++) {
-        for (int dl = dInt; dl <= dInt + dInc; dl++) {
-            for (int i = 0; i < rankTrans; i++) {
-                t[index] =
-                    t[index] + (datasetTransU[(altitude * aDim * dDim * rankTrans) +
-                                                       (((dl * aDim) + al) * rankTrans) + i] *
-                        interpolatedCoefficients[i]);
-            }
-            index++;
-        }
-    }
-    if (dInc == 1) {
-        t[0] = lerp(t[0], t[1], wd);
-        t[1] = lerp(t[2], t[3], wd);
-    }
-    if (aInc == 1) {
-        t[0] = lerp(t[0], t[1], wa);
-    }
-    return t[0];
-}
-
-double PragueSkyModel::calcTransmittanceSVD(const double a,
-                                            const double d,
-                                            const int    visibility,
-                                            const int    wavelengthLow,
-                                            const int    wavelengthInc,
-                                            const double wavelengthFactor,
-                                            const int    altitudeLow,
-                                            const int    altitudeInc,
-                                            const double altitudeFactor) const {
-    int    aInt = int(floor(a * double(aDim)));
-    int    dInt = int(floor(d * double(dDim)));
-    int    aInc = 0;
-    int    dInc = 0;
-    double wa   = (a * double(aDim)) - double(aInt);
-    double wd   = (d * double(dDim)) - double(dInt);
-    if (aInt < (aDim - 1)) {
-        aInc = 1;
-        wa   = nonlerp(double(aInt) / double(aDim), double(aInt + aInc) / double(aDim), a, 3.0);
-    } else {
-        aInt = aDim - 1;
-        wa   = 0;
-    }
-    if (dInt < (dDim - 1)) {
-        dInc = 1;
-        wd   = nonlerp(double(dInt) / double(dDim), double(dInt + dInc) / double(dDim), d, 4.0);
-    } else {
-        dInt = dDim - 1;
-        wd   = 0;
-    }
-    wa = clamp01(wa);
-    wd = clamp01(wd);
-
-    double trans = calcTransmittanceSVDAltitude(visibility,
-                                                altitudeLow,
-                                                wavelengthLow,
-                                                wavelengthInc,
-                                                wavelengthFactor,
-                                                aInt,
-                                                dInt,
-                                                aInc,
-                                                dInc,
-                                                wa,
-                                                wd);
-    if (altitudeInc == 1) {
-        const double transHigh = calcTransmittanceSVDAltitude(visibility,
-                                                              altitudeLow + altitudeInc,
-                                                              wavelengthLow,
-                                                              wavelengthInc,
-                                                              wavelengthFactor,
-                                                              aInt,
-                                                              dInt,
-                                                              aInc,
-                                                              dInc,
-                                                              wa,
-                                                              wd);
-        trans                  = lerp(trans, transHigh, altitudeFactor);
-    }
     return trans;
 }
 
 double PragueSkyModel::transmittance(const Parameters& params,
                                      const double      wavelength,
                                      const double      distance) const {
-    assert(wavelength > 0);
-    assert(distance > 0);
+    assert(distance > 0.0);
 
-    const double wavelengthNorm = (wavelength - channelStart) / channelWidth;
-    if (wavelengthNorm >= channels || wavelengthNorm < 0.)
-        return 0.;
-    const int    wavelengthLow    = (int)wavelengthNorm;
-    const double wavelengthFactor = 0.0;
-    const int    wavelengthInc    = wavelengthLow < 10 ? 1 : 0;
+    // Ignore wavelengths outside the dataset range.
+    if (wavelength < channelStart || wavelength >= (channelStart + channels * channelWidth)) {
+        return 0.0;
+    }
+    // Don't interpolate wavelengths inside the dataset range.
+    const int channelIndex = int(floor((wavelength - channelStart) / channelWidth));
 
-    int    altitudeLow;
-    double altitudeFactor;
-    int    altitudeInc;
-    findInArray(altitudesTrans, params.altitude, altitudeLow, altitudeInc, altitudeFactor);
+    // Translate configuration values to indices and interpolation factors.
+    const InterpolationParameter visibilityParam =
+        getInterpolationParameter(params.visibility, visibilitiesTrans);
+    const InterpolationParameter altitudeParam = getInterpolationParameter(params.altitude, altitudesTrans);
 
-    int    visibilityLow;
-    double visibilityW;
-    int    visibilityInc;
-    findInArray(visibilitiesTrans, params.visibility, visibilityLow, visibilityInc, visibilityW);
+    // Calculate position in the atmosphere.
+    const TransmittanceParameters transParams = toTransmittanceParams(params.theta, distance, params.altitude);
 
-    // Calculate normalized and non-linearly scaled position in the atmosphere
-    double a;
-    double d;
-    toAD(params.theta, distance, params.altitude, a, d);
+    // Get transmittance for the nearest lower visibility.
+    double trans = interpolateTrans(visibilityParam.index, altitudeParam, transParams, channelIndex);
 
-    // Evaluate basis at low visibility
-    double transLow = calcTransmittanceSVD(a,
-                                           d,
-                                           visibilityLow,
-                                           wavelengthLow,
-                                           wavelengthInc,
-                                           wavelengthFactor,
-                                           altitudeLow,
-                                           altitudeInc,
-                                           altitudeFactor);
+    // Interpolate with transmittance for the nearest higher visibility if needed.
+    if (visibilityParam.factor > 0.0) {
+        const double transHigh =
+            interpolateTrans(visibilityParam.index + 1, altitudeParam, transParams, channelIndex);
 
-    // Evaluate basis at high visibility
-    double transHigh = calcTransmittanceSVD(a,
-                                            d,
-                                            visibilityLow + visibilityInc,
-                                            wavelengthLow,
-                                            wavelengthInc,
-                                            wavelengthFactor,
-                                            altitudeLow,
-                                            altitudeInc,
-                                            altitudeFactor);
+        trans = lerp(trans, transHigh, visibilityParam.factor);
+    }
 
-    // Return interpolated transmittance values
-    double trans = lerp(transLow, transHigh, visibilityW);
-    trans        = clamp01(trans);
-    trans        = trans * trans;
-
+    // Transmittance is stored as a square root. Needs to be restored here.
+    trans = trans * trans;
     assert(trans >= 0.0 && trans <= 1.0);
+
     return trans;
 }

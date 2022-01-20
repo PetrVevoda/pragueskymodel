@@ -182,6 +182,12 @@ private:
         int totalCoefsAllConfigs;
 	};
 
+	/// Transmittance model internal parameters.
+	struct TransmittanceParameters {
+		InterpolationParameter altitude;
+		InterpolationParameter distance;
+	};
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Private data
@@ -224,21 +230,21 @@ private:
 	// [[[[[[ sunCoefsPol       (sunBreaksCountPol * float), 
 	//        zenithCoefsPol (zenithBreaksCountPol * float) ] * rankPol] 
 	// * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
-    
-	std::vector<float> datasetPol;
+
+    std::vector<float> dataPol;
 
     // Transmittance metadata
 
-    int                aDim;
-    int                dDim;
-    int                rankTrans;
-    std::vector<float> altitudesTrans;
-    std::vector<float> visibilitiesTrans;
+    int                 aDim;
+    int                 dDim;
+    int                 rankTrans;
+    std::vector<double> altitudesTrans;
+    std::vector<double> visibilitiesTrans;
 
     // Transmittance data
 
-    std::vector<float> datasetTransU;
-    std::vector<float> datasetTransV;
+    std::vector<float> dataTransU;
+    std::vector<float> dataTransV;
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -298,28 +304,28 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////
 private:
     /// Reads radiance part of the dataset file into memory.
-	/// Throws:
-	/// - DatasetReadException: if an error occurred while reading the dataset file
+    /// Throws DatasetReadException if an error occurred while reading the dataset file.
     void readRadiance(FILE* handle);
 
-	/// Reads transmittance part of the dataset file into memory.
-	/// Throws:
-	/// - DatasetReadException: if an error occurred while reading the dataset file
+    /// Reads transmittance part of the dataset file into memory.
+    /// Throws DatasetReadException if an error occurred while reading the dataset file.
     void readTransmittance(FILE* handle);
 
-	/// Reads polarisation part of the dataset file into memory.
-	/// Throws:
-	/// - DatasetReadException: if an error occurred while reading the dataset file
+    /// Reads polarisation part of the dataset file into memory.
+    /// Throws DatasetReadException if an error occurred while reading the dataset file.
     void readPolarisation(FILE* handle);
 
-    /// Gets pointer to coefficients in the dataset array corresponding to the given configuration.
+    // Sky radiance and polarisation
+
+    /// Gets iterator to coefficients in the dataset array corresponding to the given configuration. Used for
+    /// sky radiance and polarisation.
     std::vector<float>::const_iterator getCoefficients(const std::vector<float>& dataset,
                                                        const int                 totalCoefsSingleConfig,
                                                        const int                 elevation,
                                                        const int                 altitude,
                                                        const int                 visibility,
                                                        const int                 albedo,
-                                                       const int                 wavelength) const;
+                                                       const int                 wavelength) const;  
 
     /// Recursive function controlling interpolation of reconstructed radiance between two neighboring visibility,
     /// albedo, altitude and elevation values.
@@ -372,34 +378,41 @@ private:
                          const std::vector<float>& data,
                          const Metadata&           metadata) const;
 
-    std::vector<float>::const_iterator transmittanceCoefsIndex(const int visibility, const int altitude, const int wavelength) const;
+    // Transmittance
 
-    void transmittanceInterpolateWaveLength(const int    visibility,
-                                            const int    altitude,
-                                            const int    wavelengthLow,
-                                            const int    wavelengthInc,
-                                            const double wavelengthW,
-                                            double*      coefficients) const;
+    /// Gets iterator to base transmittance coefficients in the dataset array corresponding to the given
+    /// configuration.
+    std::vector<float>::const_iterator getCoefficientsTransBase(const int altitude,
+                                                                const int a,
+                                                                const int d) const;
 
-    double calcTransmittanceSVDAltitude(const int    visibility,
-                                        const int    altitude,
-                                        const int    wavelengthLow,
-                                        const int    wavelengthInc,
-                                        const double wavelengthFactor,
-                                        const int    aInt,
-                                        const int    dInt,
-                                        const int    aInc,
-                                        const int    dInc,
-                                        const double wa,
-                                        const double wd) const;
+    /// Gets iterator to transmittance coefficients in the dataset array corresponding to the given
+    /// configuration.
+    std::vector<float>::const_iterator getCoefficientsTrans(const int visibility,
+                                                            const int altitude,
+                                                            const int wavelength) const;
 
-    double calcTransmittanceSVD(const double a,
-                                const double d,
-                                const int    visibility,
-                                const int    wavelengthLow,
-                                const int    wavelengthInc,
-                                const double wavelengthFactor,
-                                const int    altitudeLow,
-                                const int    altitudeInc,
-                                const double altitudeFactor) const;
+    /// Interpolates transmittances computed for two nearest altitudes.
+    double interpolateTrans(const int                     visibilityIndex,
+                            const InterpolationParameter  altitudeParam,
+                            const TransmittanceParameters transParams,
+                            const int                     channelIndex) const;
+
+    /// For each channel reconstructs transmittances for the four nearest transmittance parameters and
+    /// interpolates them.
+    double reconstructTrans(const int                     visibilityIndex,
+                            const int                     altitudeIndex,
+                            const TransmittanceParameters transParams,
+                            const int                     channelIndex) const;
+
+    /// Converts altitude or distance value used in the transmittance model into interpolation parameter.
+    InterpolationParameter getInterpolationParameterTrans(const double value,
+                                                          const int    paramCount,
+                                                          const int    power) const;
+
+    /// Transforms the given theta angle, observer altitude and distance along ray into transmittance model
+    /// internal [altitude, distance] parametrization.
+    TransmittanceParameters toTransmittanceParams(const double theta,
+                                                  const double distance,
+                                                  const double altitude) const;
 };
