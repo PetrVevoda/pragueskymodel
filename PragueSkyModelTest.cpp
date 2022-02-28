@@ -16,7 +16,7 @@
 #pragma warning(disable : 6011)
 #pragma warning(disable : 6001)
 #define TINYEXR_IMPLEMENTATION
-#include "tinyexr.h"
+#include <tinyexr/tinyexr.h>
 #pragma warning(pop)
 
 #include "PragueSkyModel.h"

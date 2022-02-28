@@ -17,9 +17,12 @@ project(pragueskymodel)
 
 
 set(PRAGUESKYMODEL_SRC
-    miniz.c
+    thirdparty/miniz/miniz.c
     PragueSkyModel.cpp
     PragueSkyModelTest.cpp
 )
 
 add_executable(PragueSkyModel ${PRAGUESKYMODEL_SRC})
+
+target_include_directories(PragueSkyModel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
