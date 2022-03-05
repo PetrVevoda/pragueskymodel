@@ -2,6 +2,15 @@
 /x64
 *.exr
 *.dat
+*.sln
+*.vcxproj
+*.filters
+*.user
 .clang-format
 build
 data
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
+Debug
+PragueSkyModelDemo
