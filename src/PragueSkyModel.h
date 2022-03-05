@@ -24,7 +24,7 @@ double lerp(const double from, const double to, const double factor);
 /// methods to obtain the respective quantities.
 ///
 /// Throws:
-/// - DatasetNotFoundException: if the specified dataset file could not be found
+/// - DatasetOpenException: if the specified dataset file could not be opened
 /// - DatasetReadException: if an error occurred while reading the dataset file
 /// - NoPolarisationException: if the polarisation method is called but the model does not contain
 /// polarisation data
@@ -40,14 +40,14 @@ class PragueSkyModel {
 // Public types
 /////////////////////////////////////////////////////////////////////////////////////
 public:
-    /// Exception thrown by the constructor if the passed dataset file could not be found.
-    class DatasetNotFoundException : public std::exception {
+    /// Exception thrown by the constructor if the passed dataset file could not be opened.
+    class DatasetOpenException : public std::exception {
     private:
         const std::string message;
 
     public:
-        DatasetNotFoundException(const std::string& filename)
-            : message(std::string("Dataset file ") + filename + std::string(" not found")) {}
+        DatasetOpenException(const std::string& filename, const std::string& error)
+            : message(std::string("Cannot open dataset file ") + filename + std::string(": ") + error) {}
 
         virtual const char* what() const throw() { return message.c_str(); }
     };
@@ -256,7 +256,7 @@ public:
     /// Prepares the model and loads the given dataset file into memory.
     ///
 	/// Throws:
-    /// - DatasetNotFoundException: if the specified dataset file could not be found
+    /// - DatasetOpenException: if the specified dataset file could not be opened
     /// - DatasetReadException: if an error occurred while reading the dataset file
     PragueSkyModel(const std::string& filename);
 

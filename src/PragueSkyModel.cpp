@@ -104,7 +104,7 @@ double doubleFromHalf(const uint16 half) {
 // Vector3 operations
 /////////////////////////////////////////////////////////////////////////////////////
 
-float dot(const PragueSkyModel::Vector3& v1, const PragueSkyModel::Vector3& v2) {
+double dot(const PragueSkyModel::Vector3& v1, const PragueSkyModel::Vector3& v2) {
     return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
 
@@ -150,7 +150,7 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     // zenithBreaksCountRad (1 * int), zenithBreaksRad (zenithBreaksCountRad * double), 
     // emphBreaksCountRad   (1 * int), emphBreaksRad     (emphBreaksCountRad * double)
 
-    int valsRead;
+    size_t valsRead;
 
     int visibilityCount = 0;
     valsRead            = fread(&visibilityCount, sizeof(int), 1, handle);
@@ -314,7 +314,7 @@ void PragueSkyModel::readRadiance(FILE* handle) {
 void PragueSkyModel::readTransmittance(FILE* handle) {
     // Read metadata
 
-    int valsRead;
+    size_t valsRead;
 
     valsRead = fread(&dDim, sizeof(int), 1, handle);
     if (valsRead != 1 || dDim < 1)
@@ -357,8 +357,8 @@ void PragueSkyModel::readTransmittance(FILE* handle) {
         visibilitiesTrans[i] = double(temp[i]);
     }
 
-    const int totalCoefsU = dDim * aDim * rankTrans * altitudesTrans.size();
-    const int totalCoefsV = visibilitiesTrans.size() * rankTrans * 11 * altitudesTrans.size();
+    const size_t totalCoefsU = dDim * aDim * rankTrans * altitudesTrans.size();
+    const size_t totalCoefsV = visibilitiesTrans.size() * rankTrans * 11 * altitudesTrans.size();
 
     // Read data
 
@@ -382,7 +382,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     // zenithBreaksCountPol (1 * int), zenithBreaksPol (zenithBreaksCountPol * double), 
     // empBreaksCountPol    (1 * int), emphBreaksPol   (empBreaksCountPol * double)
 
-    int valsRead;
+    size_t valsRead;
 
     valsRead = fread(&metadataPol.rank, sizeof(int), 1, handle);
     if (valsRead != 1) {
@@ -431,7 +431,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     //        zenithCoefsPol (zenithBreaksCountPol * float) ] * rankPol] 
     // * channels ] * elevationCount ] * altitudeCount ] * albedoCount ] * visibilityCount
 
-    int offset = 0;
+    size_t offset = 0;
     dataPol.resize(metadataPol.totalCoefsAllConfigs);
 
     for (int con = 0; con < totalConfigs; ++con) {
@@ -457,14 +457,17 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 PragueSkyModel::PragueSkyModel(const std::string& filename) {
-    if (FILE* handle = fopen(filename.c_str(), "rb")) {
+    FILE*   handle;
+    errno_t error;
+    if ((error = fopen_s(&handle, filename.c_str(), "rb")) == 0) {
+        assert(handle);
         // Read data
         readRadiance(handle);
         readTransmittance(handle);
         readPolarisation(handle);
         fclose(handle);
     } else {
-        throw DatasetNotFoundException(filename);
+        throw DatasetOpenException(filename, strerror(error));
     }
 }
 
@@ -737,7 +740,7 @@ double PragueSkyModel::sunRadiance(const Parameters& params, const double wavele
     // Compute index into the sun radiance table.
     const double idx = (wavelength - SUN_RAD_START) / SUN_RAD_STEP;
     assert(idx >= 0 && idx < std::size(SUN_RAD_TABLE) - 1);
-    const int    idxInt   = floor(idx);
+    const int    idxInt   = int(floor(idx));
     const double idxFloat = idx - floor(idx);
 
     // Interpolate between the two closest values in the sun radiance table.

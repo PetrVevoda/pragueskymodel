@@ -61,7 +61,7 @@ double getDoubleCmdOption(char** begin, char** end, const std::string& option, c
     if (itr != end && ++itr != end) {
         try {
             return std::stod(*itr);
-        } catch (std::invalid_argument const& ex) {
+        } catch (std::invalid_argument) {
             std::cout << "Warning: Invalid value of " << option << " argument, using default " << defaultValue
                       << "\n";
         }
@@ -75,7 +75,7 @@ int getIntCmdOption(char** begin, char** end, const std::string& option, const i
     if (itr != end && ++itr != end) {
         try {
             return std::stoi(*itr);
-        } catch (std::invalid_argument const& ex) {
+        } catch (std::invalid_argument) {
             std::cout << "Warning: Invalid value of " << option << " argument, using default " << defaultValue
                       << "\n";
         }
