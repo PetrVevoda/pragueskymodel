@@ -16,7 +16,7 @@
 #pragma warning(disable : 6011)
 #pragma warning(disable : 6001)
 #define TINYEXR_IMPLEMENTATION
-#include "tinyexr.h"
+#include <tinyexr/tinyexr.h>
 #pragma warning(pop)
 
 #include "PragueSkyModel.h"
@@ -296,7 +296,7 @@ void saveEXR(const std::vector<float>& rgb, const int width, const int height, c
     if (ret != TINYEXR_SUCCESS) {
         const std::string message(std::string("Saving EXR failed - ") + std::string(err));
         FreeEXRErrorMessage(err); // Frees buffer for an error message
-        throw std::exception(message.c_str());
+        throw message.c_str();
     } else {
         free(header.channels);
         free(header.pixel_types);

@@ -2,6 +2,8 @@
 #include <array>
 #include <cassert>
 #include <limits>
+#include <cstring>
+
 #include "PragueSkyModel.h"
 
 /////////////////////////////////////////////////////////////////////////////////////

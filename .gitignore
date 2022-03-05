@@ -3,3 +3,5 @@
 *.exr
 *.dat
 .clang-format
+build
+data
