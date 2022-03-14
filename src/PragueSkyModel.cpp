@@ -457,17 +457,14 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 PragueSkyModel::PragueSkyModel(const std::string& filename) {
-    FILE*   handle;
-    errno_t error;
-    if ((error = fopen_s(&handle, filename.c_str(), "rb")) == 0) {
-        assert(handle);
+    if (FILE* handle = fopen(filename.c_str(), "rb")) {
         // Read data
         readRadiance(handle);
         readTransmittance(handle);
         readPolarisation(handle);
         fclose(handle);
     } else {
-        throw DatasetOpenException(filename, strerror(error));
+        throw DatasetNotFoundException(filename);
     }
 }
 
@@ -944,7 +941,7 @@ double PragueSkyModel::reconstructTrans(const int                     visibility
         transmittance[0] = lerp(transmittance[0], transmittance[1], transParams.altitude.factor);
     }
 
-    assert(transmittance[0] > 0.0);
+    assert(transmittance[0] >= 0.0);
     return transmittance[0];
 }
 
