@@ -11,11 +11,11 @@ C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atm
     - a very simple example implementation of a render function that creates upfacing fisheye images of the sky
     - demonstrates how to use the model
 - `src/PragueSkyModelTestCli.cpp`
-    - command-line user interface for `src/PragueSkyModelTest.h`
+    - a command-line user interface for `src/PragueSkyModelTest.h`
     - multiplatform
 - `src/PragueSkyModelTestGui.cpp`
-    - graphical user interface for `src/PragueSkyModelTest.h`
-    - currently works only with Windows and DirectX 11
+    - a graphical user interface for `src/PragueSkyModelTest.h`
+    - currently works on Windows with DirectX 11 and on Linux with SDL 2 and OpenGL 2
 - `thirdparty/tinyexr/tinyexr.h`, `thirdparty/miniz/miniz.h`, `thirdparty/miniz/miniz.c`
     - [Tiny OpenEXR image library](https://github.com/syoyo/tinyexr)
     - used by both user interfaces for saving results into EXR files
@@ -27,13 +27,15 @@ C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atm
 - `README.md`
     - this readme
     
+## Requirements
+
+GUI version requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
+
 ## Usage
 
 1. Clone the repository, run cmake and compile
-    - tested in Windows 10 with Visual Studio 2019 and MSVC 19.29.30137.0 compiler
-        - both command-line and graphical user interfaces works
-    - tested in Ubuntu 20.04 with GNU 9.3.0 compiler
-        - only the command-line user interfaces works (run `make PragueSkyModelTestCli`)
+    - tested on Windows 10 with Visual Studio 2022 and MSVC 19.31.31104.0 compiler
+    - tested on Ubuntu 20.04 with GNU 9.3.0 compiler, SDL 2.0.10 and OpenGL 2.1
 2. Download a dataset
     - the model is flexible and can work with various subsets of the original dataset
     - currently available:

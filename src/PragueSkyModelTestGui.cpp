@@ -12,32 +12,37 @@
 #include <tinyexr/tinyexr.h>
 #pragma warning(pop)
 
-// For GUI
+// For using the sky model.
+#include "PragueSkyModelTest.h"
+
+// For GUI.
+#include <chrono>
+#include <sstream>
 #include "imgui.h"
 #include "imfilebrowser.h"
+#ifdef _WIN32
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include <d3d11.h>
 #include <tchar.h>
-#include <chrono>
-#include <sstream>
-
-#include "PragueSkyModelTest.h"
+#else
+#include "imgui_impl_sdl.h"
+#include "imgui_impl_opengl2.h"
+#include <stdio.h>
+#include <SDL.h>
+#include <SDL_opengl.h>
+#endif
 
 
 /////////////////////////////////////////////////////////////////////////////////////
-// Data
+// GUI helper functions
 /////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef _WIN32
 static ID3D11Device*           g_pd3dDevice           = NULL;
 static ID3D11DeviceContext*    g_pd3dDeviceContext    = NULL;
 static IDXGISwapChain*         g_pSwapChain           = NULL;
 static ID3D11RenderTargetView* g_mainRenderTargetView = NULL;
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-// Command line helper functions
-/////////////////////////////////////////////////////////////////////////////////////
 
 void createRenderTarget() {
     ID3D11Texture2D* pBackBuffer;
@@ -146,16 +151,17 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     return ::DefWindowProc(hWnd, msg, wParam, lParam);
 }
+#endif
 
 unsigned char pixToTex(const float pixel, const float mult) {
     const float noGamma = std::pow(pixel * mult, 1.f / 2.2f);
-    return unsigned char(std::floor(std::clamp(noGamma * 255.f, 0.f, 255.f)));
+    return (unsigned char)(std::floor(std::clamp(noGamma * 255.f, 0.f, 255.f)));
 }
 
-void convertToTexture(const std::vector<float>&  image,
-                      const int                  resolution,
-                      const float                exposure,
-                      ID3D11ShaderResourceView** texture) {
+void convertToTexture(const std::vector<float>& image,
+                      const int                 resolution,
+                      const float               exposure,
+                      void**                    texture) {
     // Apply exposure and convert float RGB to byte RGBA
     std::vector<unsigned char> rawData;
     rawData.resize(size_t(resolution) * resolution * 4);
@@ -172,6 +178,7 @@ void convertToTexture(const std::vector<float>&  image,
         }
     }
 
+#ifdef _WIN32
     // Create texture
     D3D11_TEXTURE2D_DESC desc;
     ZeroMemory(&desc, sizeof(desc));
@@ -199,8 +206,38 @@ void convertToTexture(const std::vector<float>&  image,
     srvDesc.ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels       = desc.MipLevels;
     srvDesc.Texture2D.MostDetailedMip = 0;
-    g_pd3dDevice->CreateShaderResourceView(pTexture, &srvDesc, texture);
+    g_pd3dDevice->CreateShaderResourceView(pTexture, &srvDesc, (ID3D11ShaderResourceView**)texture);
     pTexture->Release();
+#else
+    // Create a OpenGL texture identifier
+    GLuint image_texture;
+    glGenTextures(1, &image_texture);
+    glBindTexture(GL_TEXTURE_2D, image_texture);
+
+    // Setup filtering parameters for display
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,
+                    GL_TEXTURE_WRAP_S,
+                    GL_CLAMP_TO_EDGE); // This is required on WebGL for non power-of-two textures
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); // Same
+
+    // Upload pixels into texture
+#if defined(GL_UNPACK_ROW_LENGTH) && !defined(__EMSCRIPTEN__)
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+#endif
+    glTexImage2D(GL_TEXTURE_2D,
+                 0,
+                 GL_RGBA,
+                 resolution,
+                 resolution,
+                 0,
+                 GL_RGBA,
+                 GL_UNSIGNED_BYTE,
+                 rawData.data());
+
+    *texture = (void*)(intptr_t)image_texture;
+#endif
 }
 
 void helpMarker(const char* desc) {
@@ -230,17 +267,25 @@ void errorMarker(const char* desc) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]) {
-    PragueSkyModel*           skyModel = NULL;
-    std::vector<float>        result;
-    ID3D11ShaderResourceView* texture = NULL;
-    const char*               modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
+    PragueSkyModel*    skyModel = NULL;
+    std::vector<float> result;
+    void*              texture = NULL;
+    const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
 
     // The full window and the input subwindow dimensions.
-    const int windowWidthFull   = 1200;
-    const int windowHeightFull  = 800;
-    const int windowWidthInput  = 440;
-    const int windowHeightInput = 760;
+    const int windowWidthFull  = 1200;
+    const int windowHeightFull = 800;
+#ifdef _WIN32
+    const int         windowWidthInput  = 440;
+    const int         windowHeightInput = 760;
+    const std::string dirSeparator      = "\\";
+#else
+    const int         windowWidthInput  = 440;
+    const int         windowHeightInput = 800;
+    const std::string dirSeparator      = "/";
+#endif
 
+#ifdef _WIN32
     // Create application window
     WNDCLASSEX wc = { sizeof(WNDCLASSEX),     CS_CLASSDC, WndProc, 0L,   0L,
                       GetModuleHandle(NULL),  NULL,       NULL,    NULL, NULL,
@@ -268,6 +313,25 @@ int main(int argc, char* argv[]) {
     // Show the window
     ::ShowWindow(hwnd, SW_SHOWDEFAULT);
     ::UpdateWindow(hwnd);
+#else
+    // Setup window
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    SDL_WindowFlags window_flags =
+        (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window*   window     = SDL_CreateWindow("Prague Sky Model",
+                                          SDL_WINDOWPOS_CENTERED,
+                                          SDL_WINDOWPOS_CENTERED,
+                                          windowWidthFull,
+                                          windowHeightFull,
+                                          window_flags);
+    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
+    SDL_GL_MakeCurrent(window, gl_context);
+    SDL_GL_SetSwapInterval(1); // Enable vsync
+#endif
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -279,8 +343,13 @@ int main(int argc, char* argv[]) {
     ImGui::StyleColorsDark();
 
     // Setup Platform/Renderer backends
+#ifdef _WIN32
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+#else
+    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
+    ImGui_ImplOpenGL2_Init();
+#endif
 
     // Flags for a window with user input
     ImGuiWindowFlags inputWindowFlags = 0;
@@ -312,20 +381,41 @@ int main(int argc, char* argv[]) {
     // Main loop
     bool done = false;
     while (!done) {
+#ifdef _WIN32
         // Poll and handle messages (inputs, window resize, etc.)
         MSG msg;
         while (::PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE)) {
             ::TranslateMessage(&msg);
             ::DispatchMessage(&msg);
-            if (msg.message == WM_QUIT)
+            if (msg.message == WM_QUIT) {
                 done = true;
+            }
         }
-        if (done)
+        if (done) {
             break;
+        }
 
         // Start the Dear ImGui frame
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
+#else
+        // Poll and handle events (inputs, window resize, etc.)
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL2_ProcessEvent(&event);
+            if (event.type == SDL_QUIT) {
+                done = true;
+            }
+            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE &&
+                event.window.windowID == SDL_GetWindowID(window)) {
+                done = true;
+            }
+        }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplOpenGL2_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+#endif
         ImGui::NewFrame();
 
         // All values modified by the GUI
@@ -378,7 +468,7 @@ int main(int argc, char* argv[]) {
             fileDialogOpen.Display();
             if (fileDialogOpen.HasSelected()) {
                 datasetPath = fileDialogOpen.GetSelected().string();
-                datasetName = datasetPath.substr(datasetPath.find_last_of("\\") + 1);
+                datasetName = datasetPath.substr(datasetPath.find_last_of(dirSeparator) + 1);
                 fileDialogOpen.ClearSelected();
             }
 
@@ -550,7 +640,7 @@ int main(int argc, char* argv[]) {
             fileDialogSave.Display();
             if (fileDialogSave.HasSelected()) {
                 outputPath = fileDialogSave.GetSelected().string();
-                outputName = outputPath.substr(outputPath.find_last_of("\\") + 1);
+                outputName = outputPath.substr(outputPath.find_last_of(dirSeparator) + 1);
                 fileDialogSave.ClearSelected();
             }
 
@@ -566,30 +656,28 @@ int main(int argc, char* argv[]) {
                                         &err);
                 if (ret != TINYEXR_SUCCESS) {
                     saveError = std::string(err);
-                    saved = false;
-                }
-                else {
+                    saved     = false;
+                } else {
                     saved = true;
                 }
                 FreeEXRErrorMessage(err);
             }
-			if (saved) {
-				ImGui::SameLine();
-				ImGui::Text("OK");
-			}
-			else if (!saveError.empty()) {
-				ImGui::SameLine();
-				errorMarker(saveError.c_str());
-			}
+            if (saved) {
+                ImGui::SameLine();
+                ImGui::Text("OK");
+            } else if (!saveError.empty()) {
+                ImGui::SameLine();
+                errorMarker(saveError.c_str());
+            }
 
             // Save section end
             if (!rendered || rendering) {
                 ImGui::EndDisabled();
             }
 
-			/////////////////////////////////////////////
-			// Help
-			/////////////////////////////////////////////
+            /////////////////////////////////////////////
+            // Help
+            /////////////////////////////////////////////
 
             ImVec2 bottomPos = ImVec2(5, ImGui::GetWindowSize().y - 35.f);
             ImGui::SetCursorPos(bottomPos);
@@ -622,7 +710,11 @@ int main(int argc, char* argv[]) {
         // Output window
         {
             ImGui::SetNextWindowPos(ImVec2(windowWidthInput, 0));
+#ifdef _WIN32
             ImGui::SetNextWindowSize(ImVec2(windowWidthFull - windowWidthInput - 17, windowHeightInput));
+#else
+            ImGui::SetNextWindowSize(ImVec2(windowWidthFull - windowWidthInput, windowHeightInput));
+#endif
             ImGui::Begin("Output", NULL, outputWindowFlags);
 
             // Update the texture if needed
@@ -638,7 +730,9 @@ int main(int argc, char* argv[]) {
                 ImVec2((windowSize.x - diplaySize.x) * 0.5f, (windowSize.y - diplaySize.y) * 0.5f);
             centerPos = ImVec2(std::max(centerPos.x, initialPos.x), std::max(centerPos.y, initialPos.y));
             ImGui::SetCursorPos(centerPos);
-            ImGui::Image((void*)texture, diplaySize);
+            if (texture) {
+                ImGui::Image(texture, diplaySize);
+            }
 
             ImGui::End();
         }
@@ -647,20 +741,37 @@ int main(int argc, char* argv[]) {
 
         // Frame rendering
         ImGui::Render();
+#ifdef _WIN32
         const float clear_color_with_alpha[4] = { 0.f, 0.f, 0.f, 1.f };
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, NULL);
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         g_pSwapChain->Present(1, 0);
+#else
+        glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+        SDL_GL_SwapWindow(window);
+#endif
     }
 
     // Cleanup
+#ifdef _WIN32
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
     cleanupDeviceD3D();
     ::DestroyWindow(hwnd);
     ::UnregisterClass(wc.lpszClassName, wc.hInstance);
+#else
+    ImGui_ImplOpenGL2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    SDL_GL_DeleteContext(gl_context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+#endif
 
     delete(skyModel);
 

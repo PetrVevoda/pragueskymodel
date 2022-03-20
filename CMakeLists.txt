@@ -28,7 +28,9 @@ add_executable(PragueSkyModelDemoCli ${PRAGUESKYMODEL_SRC})
 target_include_directories(PragueSkyModelDemoCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 target_include_directories(PragueSkyModelDemoCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
 
-# GUI version
+if(WIN32)
+
+# GUI version for Windows
 
 find_library(D3D11_LIBRARY d3d11.lib)
 
@@ -52,3 +54,39 @@ target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_
 target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
 
 target_link_libraries(PragueSkyModelDemoGui PRIVATE d3d11.lib)
+
+else()
+
+# GUI version for Linux
+
+set(OpenGL_GL_PREFERENCE GLVND)
+
+find_package(OpenGL REQUIRED)
+find_package(SDL2 REQUIRED)
+
+set(PRAGUESKYMODELGUI_SRC
+    thirdparty/miniz/miniz.c
+    thirdparty/imgui/imgui.cpp
+    thirdparty/imgui/imgui_draw.cpp
+    thirdparty/imgui/imgui_tables.cpp
+    thirdparty/imgui/imgui_widgets.cpp
+    thirdparty/imgui/backends/imgui_impl_sdl.cpp
+    thirdparty/imgui/backends/imgui_impl_opengl2.cpp
+    src/PragueSkyModel.cpp
+    src/PragueSkyModelTestGui.cpp
+)
+
+add_executable(PragueSkyModelDemoGui ${PRAGUESKYMODELGUI_SRC})
+
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${OPENGL_INCLUDE_DIRS})
+target_include_directories(PragueSkyModelDemoGui PRIVATE ${SDL2_INCLUDE_DIRS})
+
+target_link_libraries(PragueSkyModelDemoGui PRIVATE ${OPENGL_LIBRARIES})
+target_link_libraries(PragueSkyModelDemoGui PRIVATE ${SDL2_LIBRARIES})
+target_link_libraries(PragueSkyModelDemoGui PRIVATE ${CMAKE_DL_LIBS})
+
+endif()

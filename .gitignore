@@ -7,6 +7,7 @@
 *.filters
 *.user
 .clang-format
+imgui.ini
 build
 data
 CMakeCache.txt
