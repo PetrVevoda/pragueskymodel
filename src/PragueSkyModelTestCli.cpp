@@ -81,6 +81,7 @@ int main(int argc, char* argv[]) {
         std::cout << "   -alb ... ground albedo, valid range [0, 1], default 0.5\n";
         std::cout << "   -alt ... observer altitude, valid range [0, 15000] meters, default 0 meters\n";
         std::cout << "   -azi ... solar azimuth, valid range [0, 360] degrees, default 0 degrees\n";
+        std::cout << "   -cam ... rendered view, 0 for up-facing fisheye, 1 for side-facing fisheye\n";
         std::cout << "   -dat ... path to the dataset, default \".\\PragueSkyModelDataset.dat\"\n";
         std::cout << "   -ele ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees\n";
         std::cout << "   -mod ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for "
@@ -98,9 +99,10 @@ int main(int argc, char* argv[]) {
     const double      azimuth    = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
     const std::string dataset    = getStringCmdOption(argv, argv + argc, "-dat", "PragueSkyModelDataset.dat");
     const double      elevation  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-ele", 0.0));
-    const int         mode       = getIntCmdOption(argv, argv + argc, "-mod", 0);
+    const Mode        mode       = Mode(getIntCmdOption(argv, argv + argc, "-mod", 0));
     const std::string outputFile = getStringCmdOption(argv, argv + argc, "-out", "test.exr");
     const int         resolution = getIntCmdOption(argv, argv + argc, "-res", 512);
+    const View        view       = View(getIntCmdOption(argv, argv + argc, "-cam", 0));
     const double      visibility = getDoubleCmdOption(argv, argv + argc, "-vis", 59.4);
 
     std::vector<float> result;
@@ -111,7 +113,7 @@ int main(int argc, char* argv[]) {
         PragueSkyModel skyModel = PragueSkyModel(dataset);
 
         // Render sky image according to the given configuration.
-        render(&skyModel, albedo, altitude, azimuth, elevation, mode, resolution, visibility, result);
+        render(&skyModel, albedo, altitude, azimuth, elevation, mode, resolution, view, visibility, result);
 
         // Save the result buffer into an EXR file.
         const char* err = nullptr;

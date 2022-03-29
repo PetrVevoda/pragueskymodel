@@ -49,6 +49,7 @@ GUI version requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
         - `-alb` ... ground albedo, valid range [0, 1], default 0.5
         - `-alt` ... observer altitude, valid range [0, 15000] meters, default 0 meters
         - `-azi` ... solar azimuth, valid range [0, 360] degrees, default 0 degrees
+        - `-cam` ... rendered view, 0 for up-facing fisheye, 1 for side-facing fisheye
         - `-dat` ... path to the dataset, default ".\PragueSkyModelDataset.dat"
         - `-ele` ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees
         - `-mod` ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for polarisation and 3 for transmittance, default 0

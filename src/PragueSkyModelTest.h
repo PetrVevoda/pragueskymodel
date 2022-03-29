@@ -18,6 +18,20 @@ using Spectrum                          = std::array<double, SPECTRUM_CHANNELS>;
 constexpr Spectrum SPECTRUM_WAVELENGTHS = { 340.0, 380.0, 420.0, 460.0, 500.0, 540.0,
                                             580.0, 620.0, 660.0, 700.0, 740.0 };
 
+// Rendered view
+enum class View {
+    UpFacingFisheye,
+    SideFacingFisheye
+};
+
+// Rendered quantity
+enum class Mode {
+    SkyRadiance,
+    SunRadiance,
+    Polarisation,
+    Transmittance
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Conversion functions
@@ -27,8 +41,8 @@ double degreesToRadians(const double degrees) {
     return degrees * M_PI / 180.0;
 }
 
-/// Computes direction corresponding to given pixel coordinates in fisheye projection.
-Vector3 pixelToDirection(int x, int y, int resolution) {
+/// Computes direction corresponding to given pixel coordinates in up-facing or side-facing fisheye projection.
+Vector3 pixelToDirection(int x, int y, int resolution, View view) {
     // Make circular image area in center of image.
     const double radius  = resolution / 2;
     const double scaledx = (x - radius) / radius;
@@ -40,7 +54,11 @@ Vector3 pixelToDirection(int x, int y, int resolution) {
         return Vector3();
     } else {
         // Stereographic mapping.
-        return Vector3(2.0 * scaledx / denom, 2.0 * scaledy / denom, -(denom - 2.0) / denom);
+        if (view == View::SideFacingFisheye) {
+            return Vector3(-2.0 * scaledy / denom, -(denom - 2.0) / denom, -2.0 * scaledx / denom);
+        } else { // View::UpFacingFisheye
+            return Vector3(2.0 * scaledx / denom, 2.0 * scaledy / denom, -(denom - 2.0) / denom);
+        }
     }
 }
 
@@ -177,8 +195,9 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
 /// <param name="altitude">Altitude of view point in meters, value in range [0, 15000].</param>
 /// <param name="azimuth">Sun azimuth at view point in degrees, value in range [0, 360].</param>
 /// <param name="elevation">Sun elevation at view point in degrees, value in range [-4.2, 90].</param>
-/// <param name="mode">Rendered quantity: 0 = radiance, 1 = sun radiance, 2 = polarisation, 3 = transmittance.</param>
+/// <param name="mode">Rendered quantity: sky radiance, sun radiance, polarisation, or transmittance.</param>
 /// <param name="resolution">Length of resulting square image size in pixels.</param>
+/// <param name="view">Rendered view: up-facing fisheye or side-facing fisheye.</param>
 /// <param name="visibility">Horizontal visibility (meteorological range) at ground level in kilometers, value in range [20, 131.8].</param>
 /// <param name="outResult">Buffer for storing the resulting image.</param>
 void render(const PragueSkyModel* model,
@@ -186,8 +205,9 @@ void render(const PragueSkyModel* model,
             const double          altitude,
             const double          azimuth,
             const double          elevation,
-            const int             mode,
+            const Mode            mode,
             const int             resolution,
+            const View            view,
             const double          visibility,
             std::vector<float>&   outResult) {
     assert(model);
@@ -201,7 +221,7 @@ void render(const PragueSkyModel* model,
     for (int x = 0; x < resolution; x++) {
         for (int y = 0; y < resolution; y++) {
             // For each pixel of the rendered image get the corresponding direction in fisheye projection.
-            const Vector3 viewDir = pixelToDirection(x, y, resolution);
+            const Vector3 viewDir = pixelToDirection(x, y, resolution, view);
 
             // If the pixel lies outside the upper hemisphere, the direction will be zero. Such a pixel is
             // painted black.
@@ -221,18 +241,18 @@ void render(const PragueSkyModel* model,
             Spectrum spectrum;
             for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
                 switch (mode) {
-                case 1:
+                case Mode::SunRadiance:
                     spectrum[wl] = model->sunRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                     break;
-                case 2:
+                case Mode::Polarisation:
                     spectrum[wl] = std::abs(model->polarisation(params, SPECTRUM_WAVELENGTHS[wl]));
                     break;
-                case 3:
+                case Mode::Transmittance:
                     spectrum[wl] = model->transmittance(params,
                                                         SPECTRUM_WAVELENGTHS[wl],
                                                         std::numeric_limits<double>::max());
                     break;
-                default:
+                default: // Mode::SkyRadiance
                     spectrum[wl] = model->skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                     break;
                 }

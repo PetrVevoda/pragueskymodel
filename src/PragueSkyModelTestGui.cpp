@@ -271,6 +271,7 @@ int main(int argc, char* argv[]) {
     std::vector<float> result;
     void*              texture = NULL;
     const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
+    const char*        views[] = { "Up-facing fisheye", "Side-facing fisheye" };
 
     // The full window and the input subwindow dimensions.
     const int windowWidthFull  = 1200;
@@ -441,6 +442,7 @@ int main(int argc, char* argv[]) {
         static bool        saved              = false;
         static std::string saveError          = "";
         static bool        updateTexture      = false;
+        static int         view               = 0;
         static float       visibility         = 59.4f;
         static float       zoom               = 1.f;
 
@@ -544,6 +546,9 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             helpMarker("Horizontal visibility (meteorological range) at ground level in kilometers, value in "
                        "range [20, 131.8]");
+            ImGui::Combo("view", &view, views, IM_ARRAYSIZE(views));
+            ImGui::SameLine();
+            helpMarker("Rendered view");
 
             // Render button
             if (rendering) {
@@ -555,8 +560,9 @@ int main(int argc, char* argv[]) {
                            altitude,
                            azimuth,
                            elevation,
-                           mode,
+                           Mode(mode),
                            resolution,
+                           View(view),
                            visibility,
                            result);
                     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
