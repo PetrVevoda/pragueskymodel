@@ -136,7 +136,7 @@ double nonlerp(const double a, const double b, const double w, const double p) {
 // Data reading
 /////////////////////////////////////////////////////////////////////////////////////
 
-void PragueSkyModel::readRadiance(FILE* handle) {
+void PragueSkyModel::readRadiance(FILE* handle, const double singleVisibility) {
     // Read metadata.
 
     // Structure of the metadata part of the data file:
@@ -157,10 +157,40 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     if (valsRead != 1 || visibilityCount < 1)
         throw DatasetReadException("visibilityCountRad");
 
-    visibilitiesRad.resize(visibilityCount);
-    valsRead = fread(visibilitiesRad.data(), sizeof(double), visibilityCount, handle);
+    std::vector<double> visibilitiesRadInFile;
+    visibilitiesRadInFile.resize(visibilityCount);
+    valsRead = fread(visibilitiesRadInFile.data(), sizeof(double), visibilityCount, handle);
     if (valsRead != visibilityCount)
         throw DatasetReadException("visibilitesRad");
+
+    int skippedVisibilities = 0;
+    if (singleVisibility <= 0.0 || visibilityCount <= 1) {
+        // If the given single visibility value is not valid or there is just one visibility present (so there
+        // is nothing to save), all visibilities present are loaded.
+        visibilitiesRad.resize(visibilityCount);
+        visibilitiesRad = visibilitiesRadInFile;
+    } else {
+        // Otherwise, only the two visibilities closest to the single visibility value are loaded and the rest
+        // is skipped.
+        if (singleVisibility <= visibilitiesRadInFile.front()) {
+            visibilitiesRad.resize(1);
+            visibilitiesRad[0] = visibilitiesRadInFile.front();
+        } else if (singleVisibility >= visibilitiesRadInFile.back()) {
+            visibilitiesRad.resize(1);
+            visibilitiesRad[0] = visibilitiesRadInFile.back();
+            skippedVisibilities = visibilitiesRadInFile.size() - 1;
+        }
+        else {
+            int visIdx = 0;
+            while (singleVisibility >= visibilitiesRadInFile[visIdx]) {
+                ++visIdx;
+            }
+            visibilitiesRad.resize(2);
+            visibilitiesRad[0] = visibilitiesRadInFile[visIdx - 1];
+            visibilitiesRad[1] = visibilitiesRadInFile[visIdx];
+            skippedVisibilities = visIdx - 1;
+        }        
+    }
 
     int albedoCount = 0;
     valsRead        = fread(&albedoCount, sizeof(int), 1, handle);
@@ -206,6 +236,12 @@ void PragueSkyModel::readRadiance(FILE* handle) {
 
     totalConfigs =
         channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * visibilitiesRad.size();
+
+    skippedConfigsBegin =
+        channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() * skippedVisibilities;
+
+    skippedConfigsEnd = channels * elevationsRad.size() * altitudesRad.size() * albedosRad.size() *
+                        (visibilitiesRadInFile.size() - skippedVisibilities - visibilitiesRad.size());
 
     valsRead = fread(&metadataRad.rank, sizeof(int), 1, handle);
     if (valsRead != 1 || metadataRad.rank < 1)
@@ -270,6 +306,16 @@ void PragueSkyModel::readRadiance(FILE* handle) {
     radianceTemp.resize(std::max(metadataRad.sunBreaks.size(),
                                  std::max(metadataRad.zenithBreaks.size(), metadataRad.emphBreaks.size())));
 
+    size_t oneConfigByteCount =
+        ((metadataRad.sunBreaks.size() + metadataRad.zenithBreaks.size()) * sizeof(uint16) + sizeof(double)) *
+            metadataRad.rank +
+        metadataRad.emphBreaks.size() * sizeof(uint16);
+
+    // If a single visibility was requested, skip all configurations from the beginning till those needed for
+    // the requested visibility.
+    fseek(handle, oneConfigByteCount * skippedConfigsBegin, SEEK_CUR);
+
+    // Read configurations needed for the requested visibility (or all if none requested).
     for (int con = 0; con < totalConfigs; ++con) {
         for (int r = 0; r < metadataRad.rank; ++r) {
             // Read sun params.
@@ -309,6 +355,9 @@ void PragueSkyModel::readRadiance(FILE* handle) {
             dataRad[offset++] = float(doubleFromHalf(radianceTemp[i]));
         }
     }
+
+    // Skip remaining configurations till the end.
+    fseek(handle, oneConfigByteCount * skippedConfigsEnd, SEEK_CUR);
 }
 
 void PragueSkyModel::readTransmittance(FILE* handle) {
@@ -434,6 +483,13 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     size_t offset = 0;
     dataPol.resize(metadataPol.totalCoefsAllConfigs);
 
+    size_t oneConfigByteCount =
+        (metadataPol.sunBreaks.size() + metadataPol.zenithBreaks.size()) * sizeof(float) * metadataPol.rank;
+
+    // If a single visibility was requested, skip all configurations from the beginning till those needed for
+    // the requested visibility.
+    fseek(handle, oneConfigByteCount * skippedConfigsBegin, SEEK_CUR);
+
     for (int con = 0; con < totalConfigs; ++con) {
         for (int r = 0; r < metadataPol.rank; ++r) {
             // Read sun params.
@@ -456,11 +512,11 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 // Initialization
 /////////////////////////////////////////////////////////////////////////////////////
 
-void PragueSkyModel::initialize(const std::string& filename) {
+void PragueSkyModel::initialize(const std::string& filename, const double singleVisibility) {
     if (FILE* handle = fopen(filename.c_str(), "rb")) {
         initialized = false;
         // Read data
-        readRadiance(handle);
+        readRadiance(handle, singleVisibility);
         readTransmittance(handle);
         readPolarisation(handle);
         fclose(handle);

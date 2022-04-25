@@ -229,6 +229,14 @@ private:
 	// Total number of configurations
 	int totalConfigs;
 
+    // Number of configurations skipped from the beginning of the radiance/polarisation coefficients part 
+    // of the dataset file (if loading of just one visibility was requested)
+    int skippedConfigsBegin;
+
+    // Number of configurations skipped till the end of the radiance/polarisation coefficients part
+    // of the dataset file (if loading of just one visibility was requested)
+    int skippedConfigsEnd;
+
     // Metadata common for radiance and polarisation
 
     std::vector<double> visibilitiesRad;
@@ -285,10 +293,14 @@ public:
 
     /// Prepares the model and loads the given dataset file into memory.
     ///
-	/// Throws:
+    /// If a positive visibility value is passed, only a portion of the dataset needed for evaluation of that
+    /// particular visibility is loaded (two nearest visibilities are loaded if the value is included in the
+    /// dataset or one nearest if not). Otherwise, the entire dataset is loaded.
+    ///
+    /// Throws:
     /// - DatasetNotFoundException: if the specified dataset file could not be found
     /// - DatasetReadException: if an error occurred while reading the dataset file
-    void initialize(const std::string& filename);
+    void initialize(const std::string& filename, const double singleVisibility = 0.0);
 
     bool isInitialized() const { return initialized; }
 
@@ -351,8 +363,13 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////
 private:
     /// Reads radiance part of the dataset file into memory.
+    ///
+    /// If a positive visibility value is passed, only a portion of the dataset needed for evaluation of that
+    /// particular visibility is loaded (two nearest visibilities are loaded if the value is included in the
+    /// dataset or one nearest if not). Otherwise, the entire dataset is loaded.
+    ///
     /// Throws DatasetReadException if an error occurred while reading the dataset file.
-    void readRadiance(FILE* handle);
+    void readRadiance(FILE* handle, const double singleVisibility);
 
     /// Reads transmittance part of the dataset file into memory.
     /// Throws DatasetReadException if an error occurred while reading the dataset file.

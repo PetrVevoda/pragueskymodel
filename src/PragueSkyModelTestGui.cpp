@@ -273,6 +273,12 @@ int main(int argc, char* argv[]) {
     const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
     const char*        views[] = { "Up-facing fisheye", "Side-facing fisheye" };
     char               label[150];
+    const char*        visibilitiesToLoad[] = { "Full",
+                                         "only visibilities 20.0 - 27.6 km",
+                                         "only visibilities 27.6 - 40.0 km",
+                                         "only visibilities 40.0 - 59.4 km",
+                                         "only visibilities 59.4 - 90.0 km",
+                                         "only visibilities 90.0 - 131.8 km" };
 
     // Default ranges
     PragueSkyModel::AvailableData available;
@@ -457,6 +463,7 @@ int main(int argc, char* argv[]) {
         static bool        updateTexture      = false;
         static int         view               = 0;
         static float       visibility         = 59.4f;
+        static int         visibilityToLoad   = 0;
         static float       zoom               = 1.f;
 
         // Input window
@@ -487,10 +494,36 @@ int main(int argc, char* argv[]) {
                 fileDialogOpen.ClearSelected();
             }
 
+            // Selection of visibilities to load
+            ImGui::Combo("part to load", &visibilityToLoad, visibilitiesToLoad, IM_ARRAYSIZE(visibilitiesToLoad));
+            ImGui::SameLine();
+            helpMarker("What portion of the dataset should be loaded");
+
             // Load button
             if (loading) {
                 try {
-                    skyModel.initialize(datasetPath);
+                    double singleVisibility = 0.0;
+                    switch (visibilityToLoad) {
+                    case 1: // 20.0 - 27.6
+                        singleVisibility = 23.8;
+                        break;
+                    case 2: // 27.6 - 40.0
+                        singleVisibility = 33.8;
+                        break;
+                    case 3: // 40.0 - 59.4
+                        singleVisibility = 49.7;
+                        break;
+                    case 4: // 59.4 - 90.0
+                        singleVisibility = 74.7;
+                        break;
+                    case 5: // 90.0 - 131.8
+                        singleVisibility = 110.9;
+                        break;
+                    default:
+                        singleVisibility = 0.0;
+                        break;
+                    }
+                    skyModel.initialize(datasetPath, singleVisibility);
                     loaded    = true;
                     available = skyModel.getAvailableData();
                 } catch (std::exception& e) {

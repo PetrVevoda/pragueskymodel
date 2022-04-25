@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
     try {
         // Initialize the model with the given dataset file.
         PragueSkyModel skyModel;
-        skyModel.initialize(dataset);
+        skyModel.initialize(dataset, visibility);
 
         // Render sky image according to the given configuration.
         render(skyModel, albedo, altitude, azimuth, elevation, mode, resolution, view, visibility, result);
