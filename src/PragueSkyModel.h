@@ -16,7 +16,7 @@ double lerp(const double from, const double to, const double factor);
 /// provides results for wavelengths from 320 nm to 760 nm.
 ///
 /// Usage:
-/// 1. Create PragueSkyModel object by calling its constructor with a path to the dataset file.
+/// 1. Create PragueSkyModel object and call its initialize method with a path to the dataset file.
 /// 2. The model is parametrized by several values that are gathered in PragueSkyModel::Parameters structure.
 /// You can either fill this structure manually (in that case see its description) or just call
 /// computeParameters, which will compute it for you based on a few basic parameters.
@@ -28,6 +28,7 @@ double lerp(const double from, const double to, const double factor);
 /// - DatasetReadException: if an error occurred while reading the dataset file
 /// - NoPolarisationException: if the polarisation method is called but the model does not contain
 /// polarisation data
+/// - NotInitializedException: if the model is used without calling the initialize method first
 ///
 /// Note:
 /// The entire model is written in a single class and does not depend on anything except of STL. It defines a
@@ -40,7 +41,7 @@ class PragueSkyModel {
 // Public types
 /////////////////////////////////////////////////////////////////////////////////////
 public:
-    /// Exception thrown by the constructor if the passed dataset file could not be found.
+    /// Exception thrown by the initialize method if the passed dataset file could not be found.
     class DatasetNotFoundException : public std::exception {
     private:
         const std::string message;
@@ -52,7 +53,7 @@ public:
         virtual const char* what() const throw() { return message.c_str(); }
     };
 
-    /// Exception thrown by the constructor if an error occurred while reading the passed dataset file.
+    /// Exception thrown by the initialize method if an error occurred while reading the passed dataset file.
     class DatasetReadException : public std::exception {
     private:
         const std::string message;
@@ -64,8 +65,8 @@ public:
         virtual const char* what() const throw() { return message.c_str(); }
     };
 
-    /// Exception thrown by the polarisation method if the dataset passed to the constructor does not contain
-    /// polarisation data.
+    /// Exception thrown by the polarisation method if the dataset passed to the initialize method does not
+    /// contain polarisation data.
     class NoPolarisationException : public std::exception {
     private:
         const std::string message;
@@ -73,6 +74,18 @@ public:
     public:
         NoPolarisationException()
             : message(std::string("The supplied dataset does not contain polarisation data")) {}
+
+        virtual const char* what() const throw() { return message.c_str(); }
+    };
+
+    /// Exception thrown when using the model without calling the initialize method first.
+    class NotInitializedException : public std::exception {
+    private:
+        const std::string message;
+
+    public:
+        NotInitializedException()
+            : message(std::string("The model is not initialized")) {}
 
         virtual const char* what() const throw() { return message.c_str(); }
     };
@@ -198,6 +211,8 @@ private:
     double channelStart;
     double channelWidth;
 
+    bool initialized;
+
 	// Total number of configurations
 	int totalConfigs;
 
@@ -253,12 +268,16 @@ private:
 // Public methods
 /////////////////////////////////////////////////////////////////////////////////////
 public:
+    PragueSkyModel() : initialized(false) {};
+
     /// Prepares the model and loads the given dataset file into memory.
     ///
 	/// Throws:
     /// - DatasetNotFoundException: if the specified dataset file could not be found
     /// - DatasetReadException: if an error occurred while reading the dataset file
-    PragueSkyModel(const std::string& filename);
+    void initialize(const std::string& filename);
+
+    bool isInitialized() const { return initialized; }
 
     /// Computes all the parameters in the Parameters structure necessary for querying the model.
     ///
@@ -277,19 +296,25 @@ public:
 
     /// Computes sky radiance only (without direct sun contribution) for given parameters and wavelength (full
     /// dataset supports wavelengths from 320 nm to 760 nm).
+    ///
+    /// Throws NotInitializedException if called without initializing the model first.
     double skyRadiance(const Parameters& params, const double wavelength) const;
 
     /// Computes sun radiance only (without radiance inscattered from the sky) for given parameters and
     /// wavelength (full dataset supports wavelengths from 320 nm to 760 nm).
     ///
     /// Checks whether the parameters correspond to view direction hitting the sun and returns 0 if not.
+    ///
+    /// Throws NotInitializedException if called without initializing the model first.
     double sunRadiance(const Parameters& params, const double wavelength) const;
 
     /// Computes degree of polarisation for given parameters and wavelength (full
     /// dataset supports wavelengths from 320 nm to 760 nm). Can be negative.
     ///
-    /// Throws NoPolarisationException if the polarisation method is called but the model does not contain
-    /// polarisation data.
+    /// Throws:
+    /// - NoPolarisationException: if the polarisation method is called but the model does not contain
+    /// polarisation data
+    /// - NotInitializedException: if called without initializing the model first
     double polarisation(const Parameters& params, const double wavelength) const;
 
     /// Computes transmittance between view point and a point certain distance away from it along view
@@ -298,6 +323,8 @@ public:
     /// Expects the Parameters structure, wavelength (full dataset supports wavelengths from 320 nm
     /// to 760 nm) and the distance (any positive number, use std::numeric_limits<double>::max() for
     /// infinity).
+    ///
+    /// Throws NotInitializedException if called without initializing the model first.
     double transmittance(const Parameters& params, const double wavelength, const double distance) const;
 
 

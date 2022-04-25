@@ -267,7 +267,7 @@ void errorMarker(const char* desc) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]) {
-    PragueSkyModel*    skyModel = NULL;
+    PragueSkyModel     skyModel;
     std::vector<float> result;
     void*              texture = NULL;
     const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
@@ -477,8 +477,7 @@ int main(int argc, char* argv[]) {
             // Load button
             if (loading) {
                 try {
-                    delete(skyModel);
-                    skyModel = new PragueSkyModel(datasetPath);
+                    skyModel.initialize(datasetPath);
                     loaded   = true;
                 } catch (std::exception& e) {
                     loadError = e.what();
@@ -778,8 +777,6 @@ int main(int argc, char* argv[]) {
     SDL_DestroyWindow(window);
     SDL_Quit();
 #endif
-
-    delete(skyModel);
 
     return 0;
 }

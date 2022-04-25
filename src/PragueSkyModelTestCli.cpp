@@ -110,10 +110,11 @@ int main(int argc, char* argv[]) {
     // The model can throw exceptions, therefore try.
     try {
         // Initialize the model with the given dataset file.
-        PragueSkyModel skyModel = PragueSkyModel(dataset);
+        PragueSkyModel skyModel;
+        skyModel.initialize(dataset);
 
         // Render sky image according to the given configuration.
-        render(&skyModel, albedo, altitude, azimuth, elevation, mode, resolution, view, visibility, result);
+        render(skyModel, albedo, altitude, azimuth, elevation, mode, resolution, view, visibility, result);
 
         // Save the result buffer into an EXR file.
         const char* err = nullptr;

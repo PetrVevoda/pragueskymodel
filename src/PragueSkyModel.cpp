@@ -456,13 +456,15 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 // Constructor
 /////////////////////////////////////////////////////////////////////////////////////
 
-PragueSkyModel::PragueSkyModel(const std::string& filename) {
+void PragueSkyModel::initialize(const std::string& filename) {
     if (FILE* handle = fopen(filename.c_str(), "rb")) {
+        initialized = false;
         // Read data
         readRadiance(handle);
         readTransmittance(handle);
         readPolarisation(handle);
         fclose(handle);
+        initialized = true;
     } else {
         throw DatasetNotFoundException(filename);
     }
@@ -715,6 +717,10 @@ double PragueSkyModel::evaluateModel(const Parameters&         params,
 /////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::skyRadiance(const Parameters& params, const double wavelength) const {
+    if (!initialized) {
+        throw NotInitializedException();
+    }
+
 	return evaluateModel(params, wavelength, dataRad, metadataRad);
 }
 
@@ -724,6 +730,10 @@ double PragueSkyModel::skyRadiance(const Parameters& params, const double wavele
 /////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::sunRadiance(const Parameters& params, const double wavelength) const {
+    if (!initialized) {
+        throw NotInitializedException();
+    }
+
     // Ignore wavelengths outside the dataset range.
     if (wavelength < SUN_RAD_START || wavelength >= SUN_RAD_END) {
         return 0.0;
@@ -759,6 +769,10 @@ double PragueSkyModel::sunRadiance(const Parameters& params, const double wavele
 /////////////////////////////////////////////////////////////////////////////////////
 
 double PragueSkyModel::polarisation(const Parameters& params, const double wavelength) const {
+    if (!initialized) {
+        throw NotInitializedException();
+    }
+
     // If no polarisation data available
     if (metadataPol.rank == 0) {
         throw NoPolarisationException();
@@ -966,6 +980,10 @@ double PragueSkyModel::transmittance(const Parameters& params,
                                      const double      wavelength,
                                      const double      distance) const {
     assert(distance > 0.0);
+
+    if (!initialized) {
+        throw NotInitializedException();
+    }
 
     // Ignore wavelengths outside the dataset range.
     if (wavelength < channelStart || wavelength >= (channelStart + channels * channelWidth)) {

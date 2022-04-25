@@ -190,7 +190,7 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
 /// <summary>
 /// An example of using Prague Sky Model for rendering a simple fisheye RGB image of the sky.
 /// </summary>
-/// <param name="model">Pointer to the sky model object.</param>
+/// <param name="model">Reference to the sky model object.</param>
 /// <param name="albedo">Ground albedo, value in range [0, 1].</param>
 /// <param name="altitude">Altitude of view point in meters, value in range [0, 15000].</param>
 /// <param name="azimuth">Sun azimuth at view point in degrees, value in range [0, 360].</param>
@@ -200,7 +200,7 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
 /// <param name="view">Rendered view: up-facing fisheye or side-facing fisheye.</param>
 /// <param name="visibility">Horizontal visibility (meteorological range) at ground level in kilometers, value in range [20, 131.8].</param>
 /// <param name="outResult">Buffer for storing the resulting image.</param>
-void render(const PragueSkyModel* model,
+void render(const PragueSkyModel& model,
             const double          albedo,
             const double          altitude,
             const double          azimuth,
@@ -210,7 +210,7 @@ void render(const PragueSkyModel* model,
             const View            view,
             const double          visibility,
             std::vector<float>&   outResult) {
-    assert(model);
+    assert(model.isInitialized());
 
     // We are viewing the sky from 'altitude' meters above the origin.
     const Vector3 viewPoint = Vector3(0.0, 0.0, altitude);
@@ -234,7 +234,7 @@ void render(const PragueSkyModel* model,
 
             // Get internal model parameters for the desired configuration.
             const PragueSkyModel::Parameters params =
-                model->computeParameters(viewPoint, viewDir, elevation, azimuth, visibility, albedo);
+                model.computeParameters(viewPoint, viewDir, elevation, azimuth, visibility, albedo);
 
             // Based on the selected mode compute spectral sky radiance, sun radiance, polarisation or
             // transmittance.
@@ -242,18 +242,18 @@ void render(const PragueSkyModel* model,
             for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
                 switch (mode) {
                 case Mode::SunRadiance:
-                    spectrum[wl] = model->sunRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
+                    spectrum[wl] = model.sunRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                     break;
                 case Mode::Polarisation:
-                    spectrum[wl] = std::abs(model->polarisation(params, SPECTRUM_WAVELENGTHS[wl]));
+                    spectrum[wl] = std::abs(model.polarisation(params, SPECTRUM_WAVELENGTHS[wl]));
                     break;
                 case Mode::Transmittance:
-                    spectrum[wl] = model->transmittance(params,
+                    spectrum[wl] = model.transmittance(params,
                                                         SPECTRUM_WAVELENGTHS[wl],
                                                         std::numeric_limits<double>::max());
                     break;
                 default: // Mode::SkyRadiance
-                    spectrum[wl] = model->skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
+                    spectrum[wl] = model.skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
                     break;
                 }
             }
