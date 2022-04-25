@@ -453,7 +453,7 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 
 
 /////////////////////////////////////////////////////////////////////////////////////
-// Constructor
+// Initialization
 /////////////////////////////////////////////////////////////////////////////////////
 
 void PragueSkyModel::initialize(const std::string& filename) {
@@ -468,6 +468,25 @@ void PragueSkyModel::initialize(const std::string& filename) {
     } else {
         throw DatasetNotFoundException(filename);
     }
+}
+
+PragueSkyModel::AvailableData PragueSkyModel::getAvailableData() const {
+    if (!initialized) {
+        throw NotInitializedException();
+    }
+
+    AvailableData available;
+    available.albedoMin     = albedosRad.front();
+    available.albedoMax     = albedosRad.back();
+    available.altitudeMin   = altitudesRad.front();
+    available.altitudeMax   = altitudesRad.back();
+    available.elevationMin  = elevationsRad.front();
+    available.elevationMax  = elevationsRad.back();
+    available.visibilityMin = visibilitiesRad.front();
+    available.visibilityMax = visibilitiesRad.back();
+    available.polarisation  = (metadataPol.rank != 0);
+
+    return available;
 }
 
 

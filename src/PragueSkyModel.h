@@ -154,6 +154,19 @@ public:
         double albedo;
     };
 
+    /// Structure with parameter ranges available in currently loaded dataset.
+    struct AvailableData {
+        double albedoMin;
+        double albedoMax;
+        double altitudeMin;
+        double altitudeMax;
+        double elevationMin;
+        double elevationMax;
+        double visibilityMin;
+        double visibilityMax;
+        bool   polarisation;
+    };
+
 
 /////////////////////////////////////////////////////////////////////////////////////
 // Private types
@@ -278,6 +291,11 @@ public:
     void initialize(const std::string& filename);
 
     bool isInitialized() const { return initialized; }
+
+    /// Gets parameter ranges available in currently loaded dataset.
+    ///
+    /// Throws NotInitializedException if called without initializing the model first.
+    AvailableData getAvailableData() const;
 
     /// Computes all the parameters in the Parameters structure necessary for querying the model.
     ///

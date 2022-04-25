@@ -272,6 +272,19 @@ int main(int argc, char* argv[]) {
     void*              texture = NULL;
     const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
     const char*        views[] = { "Up-facing fisheye", "Side-facing fisheye" };
+    char               label[150];
+
+    // Default ranges
+    PragueSkyModel::AvailableData available;
+    available.albedoMin     = 0.0;
+    available.albedoMax     = 1.0;
+    available.altitudeMin   = 0.0;
+    available.altitudeMax   = 15000.0;
+    available.elevationMin  = -4.2;
+    available.elevationMax  = 90.0;
+    available.visibilityMin = 20.0;
+    available.visibilityMax = 131.8;
+    available.polarisation  = true;
 
     // The full window and the input subwindow dimensions.
     const int windowWidthFull  = 1200;
@@ -478,7 +491,8 @@ int main(int argc, char* argv[]) {
             if (loading) {
                 try {
                     skyModel.initialize(datasetPath);
-                    loaded   = true;
+                    loaded    = true;
+                    available = skyModel.getAvailableData();
                 } catch (std::exception& e) {
                     loadError = e.what();
                     loaded    = false;
@@ -513,24 +527,65 @@ int main(int argc, char* argv[]) {
             ImGui::Text("Configuration:");
 
             // Parameters
-            ImGui::SliderFloat("albedo", &albedo, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SliderFloat("albedo",
+                               &albedo,
+                               available.albedoMin,
+                               available.albedoMax,
+                               "%.2f",
+                               ImGuiSliderFlags_AlwaysClamp);
             ImGui::SameLine();
-            helpMarker("Ground albedo, value in range [0, 1]");
-            ImGui::SliderFloat("altitude", &altitude, 0.0f, 15000.0f, "%.0f m", ImGuiSliderFlags_AlwaysClamp);
+            sprintf(label,
+                    "Ground albedo, value in range [%.1f, %.1f]",
+                    available.albedoMin,
+                    available.albedoMax);
+            helpMarker(label);
+            ImGui::SliderFloat("altitude",
+                               &altitude,
+                               available.altitudeMin,
+                               available.altitudeMax,
+                               "%.0f m",
+                               ImGuiSliderFlags_AlwaysClamp);
             ImGui::SameLine();
-            helpMarker("Altitude of view point in meters, value in range [0, 15000]");
+            sprintf(label,
+                    "Altitude of view point in meters, value in range [%.1f, %.1f]",
+                    available.altitudeMin,
+                    available.altitudeMax);
+            helpMarker(label);
             ImGui::SliderAngle("azimuth", &azimuth, 0.0f, 360.0f, "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
             ImGui::SameLine();
             helpMarker("Sun azimuth at view point in degrees, value in range [0, 360]");
             ImGui::SliderAngle("elevation",
                                &elevation,
-                               -4.2f,
-                               90.0f,
+                               available.elevationMin,
+                               available.elevationMax,
                                "%.1f deg",
                                ImGuiSliderFlags_AlwaysClamp);
             ImGui::SameLine();
-            helpMarker("Sun elevation at view point in degrees, value in range [-4.2, 90]");
-            ImGui::Combo("mode", &mode, modes, IM_ARRAYSIZE(modes));
+            sprintf(label,
+                    "Sun elevation at view point in degrees, value in range [%.1f, %.1f]",
+                    available.elevationMin,
+                    available.elevationMax);
+            helpMarker(label);
+            if (ImGui::BeginCombo("mode", modes[mode])) {
+                for (int n = 0; n < IM_ARRAYSIZE(modes); n++) {
+                    // Disable polarisation mode if not available in the loaded dataset.
+                    ImGuiSelectableFlags flags = ImGuiSelectableFlags_None;
+                    if (!available.polarisation && n == 2) {
+                        flags |= ImGuiSelectableFlags_Disabled;
+                    }
+
+                    const bool is_selected = (mode == n);
+                    if (ImGui::Selectable(modes[n], is_selected, flags)) {
+                        mode = n;
+                    }
+
+                    // Set the initial focus when opening the combo (scrolling + keyboard navigation focus).
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
             ImGui::SameLine();
             helpMarker("Rendered quantity");
             ImGui::DragInt("resolution", &resolution, 1, 1, 10000, "%d px", ImGuiSliderFlags_AlwaysClamp);
@@ -538,13 +593,17 @@ int main(int argc, char* argv[]) {
             helpMarker("Length of resulting square image size in pixels, value in range [1, 10000]");
             ImGui::SliderFloat("visibility",
                                &visibility,
-                               20.0f,
-                               131.8f,
+                               available.visibilityMin,
+                               available.visibilityMax,
                                "%.1f km",
                                ImGuiSliderFlags_AlwaysClamp);
             ImGui::SameLine();
-            helpMarker("Horizontal visibility (meteorological range) at ground level in kilometers, value in "
-                       "range [20, 131.8]");
+            sprintf(label,
+                    "Horizontal visibility (meteorological range) at ground level in kilometers, value in "
+                    "range [%.1f, %.1f]",
+                    available.visibilityMin,
+                    available.visibilityMax);
+            helpMarker(label);
             ImGui::Combo("view", &view, views, IM_ARRAYSIZE(views));
             ImGui::SameLine();
             helpMarker("Rendered view");
