@@ -4,7 +4,7 @@ This a C++ implementation of a sky model developed at Charles University in Prag
 
 > Wilkie et al. [A fitted radiance and attenuation model for realistic atmospheres](https://cgg.mff.cuni.cz/publications/skymodel-2021/). ACM Transactions on Graphics (Proceedings of SIGGRAPH 2021), 40(4), 2021.
 
-The model is provided together with a simple render that demonstrates its usage and allows direct generation of sky images for various parameters.
+The model is provided together with a simple renderer that demonstrates its usage and allows direct generation of sky images for various parameters.
 
 ## Contents
 
