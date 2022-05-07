@@ -1,6 +1,10 @@
-# skymodel_intel
+# Prague Sky Model
 
-C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atmospheres](https://cgg.mff.cuni.cz/publications/skymodel-2021/).
+This a C++ implementation of a sky model developed at Charles University in Prague and described in
+
+> Wilkie et al. [A fitted radiance and attenuation model for realistic atmospheres](https://cgg.mff.cuni.cz/publications/skymodel-2021/). ACM Transactions on Graphics (Proceedings of SIGGRAPH 2021), 40(4), 2021.
+
+The model is provided together with a simple render that demonstrates its usage and allows direct generation of sky images for various parameters.
 
 ## Contents
 
@@ -8,7 +12,7 @@ C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atm
     - the implementation of the model
     - these two files are all you need to use the model in your code
 - `src/PragueSkyModelTest.h`
-    - a very simple example implementation of a render function that creates upfacing fisheye images of the sky
+    - a very simple example implementation of a render function that creates fisheye images of the sky
     - demonstrates how to use the model
 - `src/PragueSkyModelTestCli.cpp`
     - a command-line user interface for `src/PragueSkyModelTest.h`
@@ -16,20 +20,22 @@ C++ implementation of [A Fitted Radiance and Attenuation Model for Realistic Atm
 - `src/PragueSkyModelTestGui.cpp`
     - a graphical user interface for `src/PragueSkyModelTest.h`
     - currently works on Windows with DirectX 11 and on Linux with SDL 2 and OpenGL 2
-- `thirdparty/tinyexr/tinyexr.h`, `thirdparty/miniz/miniz.h`, `thirdparty/miniz/miniz.c`
+- `thirdparty/tinyexr`, `thirdparty/miniz`
     - [Tiny OpenEXR image library](https://github.com/syoyo/tinyexr)
     - used by both user interfaces for saving results into EXR files
 - `thirdparty/imgui`
-    - [Dear ImGui library](https://github.com/ocornut/imgui)
+    - [Dear ImGui library](https://github.com/ocornut/imgui) and [imgui-filebrowser](https://github.com/AirGuanZ/imgui-filebrowser)
     - used to build the graphical user interface
 - `CMakeLists.txt`
     - cmake file for generating project files
+- `LICENSE.txt`
+    - Apache-2.0 license file
 - `README.md`
     - this readme
     
 ## Requirements
 
-GUI version requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
+C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
 
 ## Usage
 
@@ -43,17 +49,17 @@ GUI version requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
             - contains polarisation and entire range of ground albedos, observer altitudes, solar elevations, and visibilities as presented in the paper
         - [Ground-level version (102 MB)](https://drive.google.com/file/d/1Gk6OSHGpFx8HM3drHWykb3lDrtZXO4h7/view?usp=sharing)
             - contains all ground albedos, solar elevations, and visibilities, but only a single (zero) observer altitude, does not contain polarisation
-3. Run the CLI version `PragueSkyModelCli.exe -dat <path_to_the_dataset>`
+3. Run the CLI version `PragueSkyModelCli -dat <path_to_the_dataset>`
     - this will render a default configuration
     - use option `-h` or `--help` to display this list of available options:
         - `-alb` ... ground albedo, valid range [0, 1], default 0.5
         - `-alt` ... observer altitude, valid range [0, 15000] meters, default 0 meters
         - `-azi` ... solar azimuth, valid range [0, 360] degrees, default 0 degrees
         - `-cam` ... rendered view, 0 for up-facing fisheye, 1 for side-facing fisheye
-        - `-dat` ... path to the dataset, default ".\PragueSkyModelDataset.dat"
+        - `-dat` ... path to the dataset, default "PragueSkyModelDataset.dat"
         - `-ele` ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees
         - `-mod` ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for polarisation and 3 for transmittance, default 0
         - `-out` ... output file, default "test.exr"
         - `-res` ... square output image resolution, default 512 pixels
         - `-vis` ... ground level visibility, valid range [20, 131.8] kilometers, default 59.4 kilometers
-4. Or run the GUI version `PragueSkyModelGui.exe`
+4. Or run the GUI version using `PragueSkyModelGui`
