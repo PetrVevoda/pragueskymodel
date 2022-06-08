@@ -1,3 +1,6 @@
+// Copyright 2022 Charles University
+// SPDX-License-Identifier: Apache-2.0
+
 // For saving the result to an EXR file.
 #pragma warning(push)
 #pragma warning(disable : 26495)

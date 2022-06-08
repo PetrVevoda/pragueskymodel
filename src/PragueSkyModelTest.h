@@ -1,3 +1,6 @@
+// Copyright 2022 Charles University
+// SPDX-License-Identifier: Apache-2.0
+
 #include <array>
 #include <limits>
 #include <vector>

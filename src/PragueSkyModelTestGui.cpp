@@ -1,3 +1,6 @@
+// Copyright 2022 Charles University
+// SPDX-License-Identifier: Apache-2.0
+
 // For saving the result to an EXR file.
 #pragma warning(push)
 #pragma warning(disable : 26495)
@@ -280,7 +283,7 @@ int main(int argc, char* argv[]) {
     const char* modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
     const char* views[] = { "Up-facing fisheye", "Side-facing fisheye" };
     char        label[150];
-    const char* visibilitiesToLoad[] = { "Full",
+    const char*        visibilitiesToLoad[] = { "Everything",
                                          "only visibilities 20.0 - 27.6 km",
                                          "only visibilities 27.6 - 40.0 km",
                                          "only visibilities 40.0 - 59.4 km",
