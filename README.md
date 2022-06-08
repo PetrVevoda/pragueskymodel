@@ -35,7 +35,7 @@ The model is provided together with a simple renderer that demonstrates its usag
     
 ## Requirements
 
-C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux.
+C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 with OpenGL 2 on Linux. Both CLI and GUI versions require TBB on Linux.
 
 ## Usage
 
@@ -56,6 +56,7 @@ C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 wi
         - `-alt` ... observer altitude, valid range [0, 15000] meters, default 0 meters
         - `-azi` ... solar azimuth, valid range [0, 360] degrees, default 0 degrees
         - `-cam` ... rendered view, 0 for up-facing fisheye, 1 for side-facing fisheye
+		- `-chn` ... output channel, 0 for sRGB with visible range, 1 - 55 for individual channels (from 280 to 2480 nm with 40 nm steps)
         - `-dat` ... path to the dataset, default "PragueSkyModelDataset.dat"
         - `-ele` ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees
         - `-mod` ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for polarisation and 3 for transmittance, default 0

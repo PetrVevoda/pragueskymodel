@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <array>
+#include <execution>
 #include <limits>
 #include <vector>
 
@@ -239,6 +240,83 @@ void render(const PragueSkyModel&            model,
         }
     }
 
+#ifdef NDEBUG
+    // In Release the rendering is parallelized over one image dimension (x).
+    std::vector<int> xs;
+    xs.resize(resolution);
+    for (int x = 0; x < resolution; x++) {
+        xs[x] = x;
+    }
+    std::for_each(std::execution::par,
+                  xs.begin(),
+                  xs.end(),
+                  [&model,
+                   albedo,
+                   altitude,
+                   azimuth,
+                   elevation,
+                   mode,
+                   resolution,
+                   view,
+                   &viewPoint,
+                   visibility,
+                   &outResult](auto&& x) {
+                      for (int y = 0; y < resolution; y++) {
+                          // For each pixel of the rendered image get the corresponding direction in fisheye
+                          // projection.
+                          const Vector3 viewDir = pixelToDirection(x, y, resolution, view);
+
+                          // If the pixel lies outside the upper hemisphere, the direction will be zero. Such
+                          // a pixel is kept black.
+                          if (viewDir.isZero()) {
+                              continue;
+                          }
+
+                          // Get internal model parameters for the desired configuration.
+                          const PragueSkyModel::Parameters params = model.computeParameters(viewPoint,
+                                                                                            viewDir,
+                                                                                            elevation,
+                                                                                            azimuth,
+                                                                                            visibility,
+                                                                                            albedo);
+
+                          // Based on the selected mode compute spectral sky radiance, sun radiance,
+                          // polarisation or transmittance.
+                          Spectrum spectrum;
+                          for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
+                              switch (mode) {
+                              case Mode::SunRadiance:
+                                  spectrum[wl] = model.sunRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
+                                  break;
+                              case Mode::Polarisation:
+                                  spectrum[wl] =
+                                      std::abs(model.polarisation(params, SPECTRUM_WAVELENGTHS[wl]));
+                                  break;
+                              case Mode::Transmittance:
+                                  spectrum[wl] = model.transmittance(params,
+                                                                     SPECTRUM_WAVELENGTHS[wl],
+                                                                     std::numeric_limits<double>::max());
+                                  break;
+                              default: // Mode::SkyRadiance
+                                  spectrum[wl] = model.skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
+                                  break;
+                              }
+                          }
+
+                          // Convert the spectral quantity to sRGB and store it at 0 in the result buffer.
+                          const Vector3 rgb                                  = spectrumToRGB(spectrum);
+                          outResult[0][(size_t(x) * resolution + y) * 3]     = float(rgb.x);
+                          outResult[0][(size_t(x) * resolution + y) * 3 + 1] = float(rgb.y);
+                          outResult[0][(size_t(x) * resolution + y) * 3 + 2] = float(rgb.z);
+
+                          // Store the individual channels.
+                          for (int c = 1; c < SPECTRUM_CHANNELS + 1; c++) {
+                              outResult[c][(size_t(x) * resolution + y)] = float(spectrum[c - 1]);
+                          }
+                      }
+                  });
+#else
+    // In Debug the rendering is not parallelized because of extreme slowdown in Visual Studio.
     for (int x = 0; x < resolution; x++) {
         for (int y = 0; y < resolution; y++) {
             // For each pixel of the rendered image get the corresponding direction in fisheye projection.
@@ -267,8 +345,8 @@ void render(const PragueSkyModel&            model,
                     break;
                 case Mode::Transmittance:
                     spectrum[wl] = model.transmittance(params,
-                                                        SPECTRUM_WAVELENGTHS[wl],
-                                                        std::numeric_limits<double>::max());
+                                                       SPECTRUM_WAVELENGTHS[wl],
+                                                       std::numeric_limits<double>::max());
                     break;
                 default: // Mode::SkyRadiance
                     spectrum[wl] = model.skyRadiance(params, SPECTRUM_WAVELENGTHS[wl]);
@@ -288,4 +366,5 @@ void render(const PragueSkyModel&            model,
             }
         }
     }
+#endif
 }

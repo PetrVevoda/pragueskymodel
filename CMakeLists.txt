@@ -15,6 +15,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 project(PragueSkyModel)
 
+# Windows
+if(WIN32)
+
 # Command-line version
 
 set(PRAGUESKYMODEL_SRC
@@ -23,14 +26,12 @@ set(PRAGUESKYMODEL_SRC
     src/PragueSkyModelTestCli.cpp
 )
 
-add_executable(PragueSkyModelDemoCli ${PRAGUESKYMODEL_SRC})
+add_executable(PragueSkyModelCli ${PRAGUESKYMODEL_SRC})
 
-target_include_directories(PragueSkyModelDemoCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
-target_include_directories(PragueSkyModelDemoCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
 
-if(WIN32)
-
-# GUI version for Windows
+# GUI version
 
 find_library(D3D11_LIBRARY d3d11.lib)
 
@@ -46,18 +47,38 @@ set(PRAGUESKYMODELGUI_SRC
     src/PragueSkyModelTestGui.cpp
 )
 
-add_executable(PragueSkyModelDemoGui ${PRAGUESKYMODELGUI_SRC})
+add_executable(PragueSkyModelGui ${PRAGUESKYMODELGUI_SRC})
 
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
 
-target_link_libraries(PragueSkyModelDemoGui PRIVATE d3d11.lib)
+target_link_libraries(PragueSkyModelGui PRIVATE d3d11.lib)
 
+# Linux
 else()
 
-# GUI version for Linux
+set(CMAKE_CXX_FLAGS "-DNDEBUG")
+
+# Command-line version
+
+find_package(TBB REQUIRED)
+
+set(PRAGUESKYMODEL_SRC
+    thirdparty/miniz/miniz.c
+    src/PragueSkyModel.cpp
+    src/PragueSkyModelTestCli.cpp
+)
+
+add_executable(PragueSkyModelCli ${PRAGUESKYMODEL_SRC})
+
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+
+target_link_libraries(PragueSkyModelCli PRIVATE TBB::tbb)
+
+# GUI version
 
 set(OpenGL_GL_PREFERENCE GLVND)
 
@@ -76,17 +97,18 @@ set(PRAGUESKYMODELGUI_SRC
     src/PragueSkyModelTestGui.cpp
 )
 
-add_executable(PragueSkyModelDemoGui ${PRAGUESKYMODELGUI_SRC})
+add_executable(PragueSkyModelGui ${PRAGUESKYMODELGUI_SRC})
 
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${OPENGL_INCLUDE_DIRS})
-target_include_directories(PragueSkyModelDemoGui PRIVATE ${SDL2_INCLUDE_DIRS})
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
+target_include_directories(PragueSkyModelGui PRIVATE ${OPENGL_INCLUDE_DIRS})
+target_include_directories(PragueSkyModelGui PRIVATE ${SDL2_INCLUDE_DIRS})
 
-target_link_libraries(PragueSkyModelDemoGui PRIVATE ${OPENGL_LIBRARIES})
-target_link_libraries(PragueSkyModelDemoGui PRIVATE ${SDL2_LIBRARIES})
-target_link_libraries(PragueSkyModelDemoGui PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(PragueSkyModelGui PRIVATE ${OPENGL_LIBRARIES})
+target_link_libraries(PragueSkyModelGui PRIVATE ${SDL2_LIBRARIES})
+target_link_libraries(PragueSkyModelGui PRIVATE TBB::tbb)
+target_link_libraries(PragueSkyModelGui PRIVATE ${CMAKE_DL_LIBS})
 
 endif()

@@ -454,6 +454,7 @@ int main(int argc, char* argv[]) {
         // All values modified by the GUI
         static float       albedo             = 0.5f;
         static float       altitude           = 0.0f;
+        static bool        autorender         = false;
         static float       azimuth            = 0.0f;
         static int         channel            = 0;
         static int         channelMode        = 0;
@@ -576,39 +577,52 @@ int main(int argc, char* argv[]) {
             ImGui::Text("Configuration:");
 
             // Parameters
-            ImGui::SliderFloat("albedo",
-                               &albedo,
-                               available.albedoMin,
-                               available.albedoMax,
-                               "%.2f",
-                               ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::SliderFloat("albedo",
+                                   &albedo,
+                                   available.albedoMin,
+                                   available.albedoMax,
+                                   "%.2f",
+                                   ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             sprintf(label,
                     "Ground albedo, value in range [%.1f, %.1f]",
                     available.albedoMin,
                     available.albedoMax);
             helpMarker(label);
-            ImGui::SliderFloat("altitude",
+            if (ImGui::SliderFloat("altitude",
                                &altitude,
                                available.altitudeMin,
                                available.altitudeMax,
                                "%.0f m",
-                               ImGuiSliderFlags_AlwaysClamp);
+                                   ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             sprintf(label,
                     "Altitude of view point in meters, value in range [%.1f, %.1f]",
                     available.altitudeMin,
                     available.altitudeMax);
             helpMarker(label);
-            ImGui::SliderAngle("azimuth", &azimuth, 0.0f, 360.0f, "%.1f deg", ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::SliderAngle("azimuth",
+                                   &azimuth,
+                                   0.0f,
+                                   360.0f,
+                                   "%.1f deg",
+                                   ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             helpMarker("Sun azimuth at view point in degrees, value in range [0, 360]");
-            ImGui::SliderAngle("elevation",
+            if (ImGui::SliderAngle("elevation",
                                &elevation,
                                available.elevationMin,
                                available.elevationMax,
                                "%.1f deg",
-                               ImGuiSliderFlags_AlwaysClamp);
+                                   ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             sprintf(label,
                     "Sun elevation at view point in degrees, value in range [%.1f, %.1f]",
@@ -637,15 +651,25 @@ int main(int argc, char* argv[]) {
             }
             ImGui::SameLine();
             helpMarker("Rendered quantity");
-            ImGui::DragInt("resolution", &resolution, 1, 1, 10000, "%d px", ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::DragInt("resolution",
+                               &resolution,
+                               1,
+                               1,
+                               10000,
+                               "%d px",
+                               ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             helpMarker("Length of resulting square image size in pixels, value in range [1, 10000]");
-            ImGui::SliderFloat("visibility",
+            if (ImGui::SliderFloat("visibility",
                                &visibility,
                                available.visibilityMin,
                                available.visibilityMax,
                                "%.1f km",
-                               ImGuiSliderFlags_AlwaysClamp);
+                                   ImGuiSliderFlags_AlwaysClamp) &&
+                autorender)
+                rendering = true;
             ImGui::SameLine();
             sprintf(label,
                     "Horizontal visibility (meteorological range) at ground level in kilometers, value in "
@@ -653,7 +677,8 @@ int main(int argc, char* argv[]) {
                     available.visibilityMin,
                     available.visibilityMax);
             helpMarker(label);
-            ImGui::Combo("view", &view, views, IM_ARRAYSIZE(views));
+            if (ImGui::Combo("view", &view, views, IM_ARRAYSIZE(views)) && autorender)
+                rendering = true;
             ImGui::SameLine();
             helpMarker("Rendered view");
 
@@ -688,6 +713,8 @@ int main(int argc, char* argv[]) {
                 ImGui::SameLine();
                 ImGui::Text("Rendering ...");
             }
+            ImGui::SameLine();
+            ImGui::Checkbox("Auto-update", &autorender);
             if (rendered && !rendering) {
                 ImGui::SameLine();
                 std::ostringstream out;
@@ -732,6 +759,8 @@ int main(int argc, char* argv[]) {
                 channel = std::clamp(int((wavelength - SPECTRUM_WAVELENGTHS[0] + 0.5 * SPECTRUM_STEP) / SPECTRUM_STEP + 1), 1, SPECTRUM_CHANNELS);
                 updateTexture = true;
             }
+            ImGui::SameLine();
+            helpMarker("wavelength determining the displayed wavelength bin");
             if (channel == 0) {
                 ImGui::EndDisabled();
             }           
@@ -843,10 +872,16 @@ int main(int argc, char* argv[]) {
                 ImGui::Text("2. Select sky parameters you wish to render in the 'Configuration' section and "
                             "hit 'Render'. The result will show up on the right.");
                 ImGui::Indent();
+                ImGui::Text("You can also check 'Auto-update' and the rendered image will update "
+                            "automatically with any change in the 'Configuration' section.");
+                ImGui::Unindent();
+                ImGui::Indent();
                 ImGui::Text("Note: You can use CTRL + Click on the sliders to input values directly.");
                 ImGui::Unindent();
-                ImGui::Text("3. Modify the way the result is displayed in the 'Display' section.");
-                ImGui::Text("4. Save the result to a file in the 'Save' section.");
+                ImGui::Text("3. Select whether to display all visible channels combined in one sRGB image or "
+                            "individual channels in the 'Channels' section.");
+                ImGui::Text("4. Modify the way the result is displayed in the 'Display' section.");
+                ImGui::Text("5. Save the result to a file in the 'Save' section.");
                 ImGui::Indent();
                 ImGui::Text(
                     "Note: The result being saved is not affected by settings from the 'Display' section.");
