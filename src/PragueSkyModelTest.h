@@ -10,13 +10,18 @@
 
 using Vector3  = PragueSkyModel::Vector3;
 
-// We use 11-channel spectrum for querying the model. The wavelengths samples are placed at centers of
+// We use 55-channel spectrum for querying the model. The wavelengths samples are placed at centers of
 // spectral bins used by the model.
-constexpr int    SPECTRUM_CHANNELS      = 11;
+constexpr int    SPECTRUM_CHANNELS      = 55;
 constexpr double SPECTRUM_STEP          = 40;
 using Spectrum                          = std::array<double, SPECTRUM_CHANNELS>;
-constexpr Spectrum SPECTRUM_WAVELENGTHS = { 340.0, 380.0, 420.0, 460.0, 500.0, 540.0,
-                                            580.0, 620.0, 660.0, 700.0, 740.0 };
+constexpr Spectrum SPECTRUM_WAVELENGTHS = { 300.0,  340.0,  380.0,  420.0,  460.0,  500.0,  540.0,  580.0,
+                                            620.0,  660.0,  700.0,  740.0,  780.0,  820.0,  860.0,  900.0,
+                                            940.0,  980.0,  1020.0, 1060.0, 1100.0, 1140.0, 1180.0, 1220.0,
+                                            1260.0, 1300.0, 1340.0, 1380.0, 1420.0, 1460.0, 1500.0, 1540.0,
+                                            1580.0, 1620.0, 1660.0, 1700.0, 1740.0, 1780.0, 1820.0, 1860.0,
+                                            1900.0, 1940.0, 1980.0, 2020.0, 2060.0, 2100.0, 2140.0, 2180.0,
+                                            2220.0, 2260.0, 2300.0, 2340.0, 2380.0, 2420.0, 2460.0 };
 
 // Rendered view
 enum class View {
@@ -44,9 +49,9 @@ double degreesToRadians(const double degrees) {
 /// Computes direction corresponding to given pixel coordinates in up-facing or side-facing fisheye projection.
 Vector3 pixelToDirection(int x, int y, int resolution, View view) {
     // Make circular image area in center of image.
-    const double radius  = resolution / 2;
-    const double scaledx = (x - radius) / radius;
-    const double scaledy = (y - radius) / radius;
+    const double radius  = double(resolution) / 2;
+    const double scaledx = (x + 0.5 - radius) / radius;
+    const double scaledy = (y + 0.5 - radius) / radius;
     const double denom   = scaledx * scaledx + scaledy * scaledy + 1;
 
     if (denom > 2.0) {
@@ -169,7 +174,9 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
     Vector3 xyz = Vector3();
     for (int wl = 0; wl < SPECTRUM_CHANNELS; wl++) {
         const int responseIdx = int((SPECTRUM_WAVELENGTHS[wl] - SPECTRAL_RESPONSE_START) / SPECTRAL_RESPONSE_STEP);
-        xyz                   = xyz + SPECTRAL_RESPONSE[responseIdx] * spectrum[wl];
+        if (0 <= responseIdx && responseIdx < std::size(SPECTRAL_RESPONSE)) {
+            xyz = xyz + SPECTRAL_RESPONSE[responseIdx] * spectrum[wl];
+        }
     }
     xyz = xyz * SPECTRUM_STEP;
 
@@ -199,24 +206,35 @@ Vector3 spectrumToRGB(const Spectrum& spectrum) {
 /// <param name="resolution">Length of resulting square image size in pixels.</param>
 /// <param name="view">Rendered view: up-facing fisheye or side-facing fisheye.</param>
 /// <param name="visibility">Horizontal visibility (meteorological range) at ground level in kilometers, value in range [20, 131.8].</param>
-/// <param name="outResult">Buffer for storing the resulting image.</param>
-void render(const PragueSkyModel& model,
-            const double          albedo,
-            const double          altitude,
-            const double          azimuth,
-            const double          elevation,
-            const Mode            mode,
-            const int             resolution,
-            const View            view,
-            const double          visibility,
-            std::vector<float>&   outResult) {
+/// <param name="outResult">Buffer for storing the resulting images (index 0 = sRGB, index 1 - <# of channels in the dataset> = individual channels).</param>
+void render(const PragueSkyModel&            model,
+            const double                     albedo,
+            const double                     altitude,
+            const double                     azimuth,
+            const double                     elevation,
+            const Mode                       mode,
+            const int                        resolution,
+            const View                       view,
+            const double                     visibility,
+            std::vector<std::vector<float>>& outResult) {
     assert(model.isInitialized());
 
     // We are viewing the sky from 'altitude' meters above the origin.
     const Vector3 viewPoint = Vector3(0.0, 0.0, altitude);
 
-    // Resize the RGB buffer.
-    outResult.resize(size_t(resolution) * resolution * 3);
+    // Resize the output buffer.
+    outResult.resize(SPECTRUM_CHANNELS + 1);
+    outResult[0].resize(size_t(resolution) * resolution * 3); // RGB
+    for (int c = 1; c < SPECTRUM_CHANNELS + 1; c++) {
+        outResult[c].resize(size_t(resolution) * resolution); // mono
+    }
+
+    // Zero the output buffer.
+    for (int c = 0; c < SPECTRUM_CHANNELS + 1; c++) {
+        for (int i = 0; i < outResult[c].size(); i++) {
+            outResult[c][i] = 0.f;
+        }
+    }
 
     for (int x = 0; x < resolution; x++) {
         for (int y = 0; y < resolution; y++) {
@@ -224,11 +242,8 @@ void render(const PragueSkyModel& model,
             const Vector3 viewDir = pixelToDirection(x, y, resolution, view);
 
             // If the pixel lies outside the upper hemisphere, the direction will be zero. Such a pixel is
-            // painted black.
+            // kept black.
             if (viewDir.isZero()) {
-                outResult[(size_t(x) * resolution + y) * 3]     = 0.0;
-                outResult[(size_t(x) * resolution + y) * 3 + 1] = 0.0;
-                outResult[(size_t(x) * resolution + y) * 3 + 2] = 0.0;
                 continue;
             }
 
@@ -258,11 +273,16 @@ void render(const PragueSkyModel& model,
                 }
             }
 
-            // Convert the spectral quantity to sRGB and store it in the result buffer.
-            const Vector3 rgb                               = spectrumToRGB(spectrum);
-            outResult[(size_t(x) * resolution + y) * 3]     = float(rgb.x);
-            outResult[(size_t(x) * resolution + y) * 3 + 1] = float(rgb.y);
-            outResult[(size_t(x) * resolution + y) * 3 + 2] = float(rgb.z);
+            // Convert the spectral quantity to sRGB and store it at 0 in the result buffer.
+            const Vector3 rgb                                  = spectrumToRGB(spectrum);
+            outResult[0][(size_t(x) * resolution + y) * 3]     = float(rgb.x);
+            outResult[0][(size_t(x) * resolution + y) * 3 + 1] = float(rgb.y);
+            outResult[0][(size_t(x) * resolution + y) * 3 + 2] = float(rgb.z);
+            
+            // Store the individual channels.
+            for (int c = 1; c < SPECTRUM_CHANNELS + 1; c++) {
+                outResult[c][(size_t(x) * resolution + y)] = float(spectrum[c - 1]);
+            }
         }
     }
 }

@@ -13,7 +13,7 @@ double lerp(const double from, const double to, const double factor);
 /// a specific altitude above ground. The range of configurations depends on supplied dataset. The full
 /// version models atmosphere of visibility (meteorological range) from 20 km to 131.8 km for sun elevations
 /// from -4.2 degrees to 90 degrees, observer altitudes from 0 km to 15 km and ground albedo from 0 to 1, and
-/// provides results for wavelengths from 320 nm to 760 nm.
+/// provides results for wavelengths from 280 nm to 2480 nm.
 ///
 /// Usage:
 /// 1. Create PragueSkyModel object and call its initialize method with a path to the dataset file.
@@ -165,6 +165,9 @@ public:
         double visibilityMin;
         double visibilityMax;
         bool   polarisation;
+        int    channels;
+        double channelStart;
+        double channelWidth;
     };
 
 
@@ -325,13 +328,13 @@ public:
                                  const double   albedo) const;
 
     /// Computes sky radiance only (without direct sun contribution) for given parameters and wavelength (full
-    /// dataset supports wavelengths from 320 nm to 760 nm).
+    /// dataset supports wavelengths from 280 nm to 2480 nm).
     ///
     /// Throws NotInitializedException if called without initializing the model first.
     double skyRadiance(const Parameters& params, const double wavelength) const;
 
     /// Computes sun radiance only (without radiance inscattered from the sky) for given parameters and
-    /// wavelength (full dataset supports wavelengths from 320 nm to 760 nm).
+    /// wavelength (full dataset supports wavelengths from 280 nm to 2480 nm).
     ///
     /// Checks whether the parameters correspond to view direction hitting the sun and returns 0 if not.
     ///
@@ -339,7 +342,7 @@ public:
     double sunRadiance(const Parameters& params, const double wavelength) const;
 
     /// Computes degree of polarisation for given parameters and wavelength (full
-    /// dataset supports wavelengths from 320 nm to 760 nm). Can be negative.
+    /// dataset supports wavelengths from 280 nm to 2480 nm). Can be negative.
     ///
     /// Throws:
     /// - NoPolarisationException: if the polarisation method is called but the model does not contain
@@ -350,8 +353,8 @@ public:
     /// Computes transmittance between view point and a point certain distance away from it along view
     /// direction.
     ///
-    /// Expects the Parameters structure, wavelength (full dataset supports wavelengths from 320 nm
-    /// to 760 nm) and the distance (any positive number, use std::numeric_limits<double>::max() for
+    /// Expects the Parameters structure, wavelength (full dataset supports wavelengths from 280 nm
+    /// to 2480 nm) and the distance (any positive number, use std::numeric_limits<double>::max() for
     /// infinity).
     ///
     /// Throws NotInitializedException if called without initializing the model first.

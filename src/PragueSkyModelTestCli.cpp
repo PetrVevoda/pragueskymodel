@@ -82,6 +82,7 @@ int main(int argc, char* argv[]) {
         std::cout << "   -alt ... observer altitude, valid range [0, 15000] meters, default 0 meters\n";
         std::cout << "   -azi ... solar azimuth, valid range [0, 360] degrees, default 0 degrees\n";
         std::cout << "   -cam ... rendered view, 0 for up-facing fisheye, 1 for side-facing fisheye\n";
+        std::cout << "   -chn ... output channel, 0 for sRGB with visible range, 1 - 55 for individual channels (280:40:2480 nm)\n";
         std::cout << "   -dat ... path to the dataset, default \".\\PragueSkyModelDataset.dat\"\n";
         std::cout << "   -ele ... solar elevation, valid range [-4.2, 90] degrees, default 0 degrees\n";
         std::cout << "   -mod ... what quantity to output, use 0 for sky radiance, 1 for sun radiance, 2 for "
@@ -97,6 +98,7 @@ int main(int argc, char* argv[]) {
     const double      albedo     = getDoubleCmdOption(argv, argv + argc, "-alb", 0.5);
     const double      altitude   = getDoubleCmdOption(argv, argv + argc, "-alt", 0.0);
     const double      azimuth    = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-azi", 0.0));
+    const int         channel    = std::clamp(getIntCmdOption(argv, argv + argc, "-chn", 0), 0, SPECTRUM_CHANNELS);
     const std::string dataset    = getStringCmdOption(argv, argv + argc, "-dat", "PragueSkyModelDataset.dat");
     const double      elevation  = degreesToRadians(getDoubleCmdOption(argv, argv + argc, "-ele", 0.0));
     const Mode        mode       = Mode(getIntCmdOption(argv, argv + argc, "-mod", 0));
@@ -105,7 +107,7 @@ int main(int argc, char* argv[]) {
     const View        view       = View(getIntCmdOption(argv, argv + argc, "-cam", 0));
     const double      visibility = getDoubleCmdOption(argv, argv + argc, "-vis", 59.4);
 
-    std::vector<float> result;
+    std::vector<std::vector<float>> result;
 
     // The model can throw exceptions, therefore try.
     try {
@@ -118,7 +120,7 @@ int main(int argc, char* argv[]) {
 
         // Save the result buffer into an EXR file.
         const char* err = nullptr;
-        int         ret = SaveEXR(result.data(), resolution, resolution, 3, 0, outputFile.c_str(), &err);
+        int ret = SaveEXR(result[channel].data(), resolution, resolution, channel == 0 ? 3 : 1, 0, outputFile.c_str(), &err);
         if (ret != TINYEXR_SUCCESS) {
             const std::string message(std::string("Saving EXR failed - ") + std::string(err));
             FreeEXRErrorMessage(err); // Frees buffer for an error message

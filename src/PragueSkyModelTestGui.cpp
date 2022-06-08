@@ -161,6 +161,7 @@ unsigned char pixToTex(const float pixel, const float mult) {
 void convertToTexture(const std::vector<float>& image,
                       const int                 resolution,
                       const float               exposure,
+                      const bool                mono,
                       void**                    texture) {
     // Apply exposure and convert float RGB to byte RGBA
     std::vector<unsigned char> rawData;
@@ -168,12 +169,18 @@ void convertToTexture(const std::vector<float>& image,
     const float expMult = std::pow(2.f, exposure);
     for (int x = 0; x < resolution; x++) {
         for (int y = 0; y < resolution; y++) {
-            rawData[(size_t(x) * resolution + y) * 4] =
-                pixToTex(image[(size_t(x) * resolution + y) * 3], expMult);
-            rawData[(size_t(x) * resolution + y) * 4 + 1] =
-                pixToTex(image[(size_t(x) * resolution + y) * 3 + 1], expMult);
-            rawData[(size_t(x) * resolution + y) * 4 + 2] =
-                pixToTex(image[(size_t(x) * resolution + y) * 3 + 2], expMult);
+            if (mono) {
+                rawData[(size_t(x) * resolution + y) * 4] = rawData[(size_t(x) * resolution + y) * 4 + 1] =
+                    rawData[(size_t(x) * resolution + y) * 4 + 2] =
+                        pixToTex(image[size_t(x) * resolution + y], expMult);
+            } else {
+                rawData[(size_t(x) * resolution + y) * 4] =
+                    pixToTex(image[(size_t(x) * resolution + y) * 3], expMult);
+                rawData[(size_t(x) * resolution + y) * 4 + 1] =
+                    pixToTex(image[(size_t(x) * resolution + y) * 3 + 1], expMult);
+                rawData[(size_t(x) * resolution + y) * 4 + 2] =
+                    pixToTex(image[(size_t(x) * resolution + y) * 3 + 2], expMult);
+            }
             rawData[(size_t(x) * resolution + y) * 4 + 3] = 255;
         }
     }
@@ -267,13 +274,13 @@ void errorMarker(const char* desc) {
 /////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char* argv[]) {
-    PragueSkyModel     skyModel;
-    std::vector<float> result;
-    void*              texture = NULL;
-    const char*        modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
-    const char*        views[] = { "Up-facing fisheye", "Side-facing fisheye" };
-    char               label[150];
-    const char*        visibilitiesToLoad[] = { "Full",
+    PragueSkyModel                  skyModel;
+    std::vector<std::vector<float>> result;
+    void*                           texture = NULL;
+    const char* modes[] = { "Sky radiance", "Sun radiance", "Polarisation", "Transmittance" };
+    const char* views[] = { "Up-facing fisheye", "Side-facing fisheye" };
+    char        label[150];
+    const char* visibilitiesToLoad[] = { "Full",
                                          "only visibilities 20.0 - 27.6 km",
                                          "only visibilities 27.6 - 40.0 km",
                                          "only visibilities 40.0 - 59.4 km",
@@ -291,6 +298,9 @@ int main(int argc, char* argv[]) {
     available.visibilityMin = 20.0;
     available.visibilityMax = 131.8;
     available.polarisation  = true;
+    available.channels      = SPECTRUM_CHANNELS;
+    available.channelStart  = SPECTRUM_WAVELENGTHS[0] - 0.5 * SPECTRUM_STEP;
+    available.channelWidth  = SPECTRUM_STEP;
 
     // The full window and the input subwindow dimensions.
     const int windowWidthFull  = 1200;
@@ -442,6 +452,8 @@ int main(int argc, char* argv[]) {
         static float       albedo             = 0.5f;
         static float       altitude           = 0.0f;
         static float       azimuth            = 0.0f;
+        static int         channel            = 0;
+        static int         channelMode        = 0;
         static std::string datasetName        = "PragueSkyModelDatasetGround.dat";
         static std::string datasetPath        = "PragueSkyModelDatasetGround.dat";
         static float       elevation          = 0.0f;
@@ -464,6 +476,7 @@ int main(int argc, char* argv[]) {
         static int         view               = 0;
         static float       visibility         = 59.4f;
         static int         visibilityToLoad   = 0;
+        static int         wavelength         = 280;
         static float       zoom               = 1.f;
 
         // Input window
@@ -690,6 +703,44 @@ int main(int argc, char* argv[]) {
             }
 
             /////////////////////////////////////////////
+            // Channels section
+            /////////////////////////////////////////////
+
+            // Channels section begin
+            if (!rendered || rendering) {
+                ImGui::BeginDisabled(true);
+            }
+            ImGui::Text("Channels:");
+
+            // Parameters
+            if (ImGui::RadioButton("all visible range in one sRGB image", &channelMode, 0)) {
+                channel = 0;
+                updateTexture = true;
+            }
+            if (ImGui::RadioButton("individual wavelength bins", &channelMode, 1)) {
+                wavelength = std::clamp(wavelength, int(available.channelStart), int(available.channelStart + available.channels * available.channelWidth - 1));
+                channel = std::clamp(int((wavelength - SPECTRUM_WAVELENGTHS[0] + 0.5 * SPECTRUM_STEP) / SPECTRUM_STEP + 1), 1, SPECTRUM_CHANNELS);
+                updateTexture = true;
+            }
+            if (channel == 0) {
+                ImGui::BeginDisabled(true);
+            }
+            if (ImGui::SliderInt("wavelength", &wavelength, available.channelStart, available.channelStart + available.channels * available.channelWidth - 1, "%d nm")) {
+                channel = std::clamp(int((wavelength - SPECTRUM_WAVELENGTHS[0] + 0.5 * SPECTRUM_STEP) / SPECTRUM_STEP + 1), 1, SPECTRUM_CHANNELS);
+                updateTexture = true;
+            }
+            if (channel == 0) {
+                ImGui::EndDisabled();
+            }           
+
+            // Channels section end
+            ImGui::Dummy(ImVec2(0.0f, 1.0f));
+            ImGui::Separator();
+            if (!rendered || rendering) {
+                ImGui::EndDisabled();
+            }
+
+            /////////////////////////////////////////////
             // Display section
             /////////////////////////////////////////////
 
@@ -744,10 +795,10 @@ int main(int argc, char* argv[]) {
             // Save button
             if (ImGui::Button("Save")) {
                 const char* err = NULL;
-                const int   ret       = SaveEXR(result.data(),
+                const int   ret = SaveEXR(result[channel].data(),
                                         renderedResolution,
                                         renderedResolution,
-                                        3,
+                                        channel == 0 ? 3 : 1,
                                         0,
                                         outputPath.c_str(),
                                         &err);
@@ -816,7 +867,7 @@ int main(int argc, char* argv[]) {
 
             // Update the texture if needed
             if (updateTexture) {
-                convertToTexture(result, renderedResolution, exposure, &texture);
+                convertToTexture(result[channel], renderedResolution, exposure, channel > 0, &texture);
             }
 
             // Display the texture in the center of the window
