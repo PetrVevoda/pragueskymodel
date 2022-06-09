@@ -8,9 +8,9 @@
 
 double lerp(const double from, const double to, const double factor);
 
-/// Physically-based sky model by Wilkie et al. [2020]. Improves on previous work especially in accuracy of
-/// sunset scenarios. Based on reconstruction of radiance from a small dataset fitted to a large set of images
-/// obtained by brute force atmosphere simulation.
+/// Physically-based sky model by Wilkie et al. [2021] (https://cgg.mff.cuni.cz/publications/skymodel-2021/).
+/// Improves on previous work especially in accuracy of sunset scenarios. Based on reconstruction of radiance
+/// from a small dataset fitted to a large set of images obtained by brute force atmosphere simulation.
 ///
 /// Provides evaluation of spectral sky radiance, sun radiance, transmittance and polarisation for observer at
 /// a specific altitude above ground. The range of configurations depends on supplied dataset. The full

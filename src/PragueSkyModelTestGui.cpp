@@ -648,6 +648,8 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 ImGui::EndCombo();
+                if (autorender)
+                    rendering = true;
             }
             ImGui::SameLine();
             helpMarker("Rendered quantity");
