@@ -607,7 +607,6 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     // rankPol              (1 * int), 
     // sunBreaksCountPol    (1 * int), sunBreaksPol    (sunBreaksCountPol * double),
     // zenithBreaksCountPol (1 * int), zenithBreaksPol (zenithBreaksCountPol * double), 
-    // empBreaksCountPol    (1 * int), emphBreaksPol   (empBreaksCountPol * double)
 
     size_t valsRead;
 
@@ -638,6 +637,8 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
     if (valsRead != zenithBreaksCount)
         throw DatasetReadException("zenithBreaksPol");
 
+    metadataPol.emphBreaks.clear();
+
     // Calculate offsets and strides.
 
     metadataPol.sunOffset = 0;
@@ -645,6 +646,8 @@ void PragueSkyModel::readPolarisation(FILE* handle) {
 
     metadataPol.zenithOffset = metadataPol.sunOffset + metadataPol.sunBreaks.size();
     metadataPol.zenithStride = metadataPol.sunStride;
+
+    metadataPol.emphOffset = 0;
 
     metadataPol.totalCoefsSingleConfig =
         metadataPol.sunOffset +
@@ -928,7 +931,7 @@ double PragueSkyModel::evaluateModel(const Parameters&         params,
                                       metadata.zenithBreaks);
         angleParameters.zero = getInterpolationParameter(params.zero, metadata.emphBreaks);
     } else { // for polarisation
-        angleParameters.alpha = getInterpolationParameter(params.theta, metadata.zenithBreaks);
+        angleParameters.alpha = getInterpolationParameter(params.zero, metadata.zenithBreaks);
     }
 
     // Translate configuration values to indices and interpolation factors.
