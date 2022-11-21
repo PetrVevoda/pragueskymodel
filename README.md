@@ -6,7 +6,7 @@ This a C++ implementation of a sky model developed at Charles University in Prag
 
 and in
 
-> Vévoda et al. A Wide Spectral Range Sky Radiance Model. Computer Graphics Forum, 41(7), 2022.
+> Vévoda et al. [A Wide Spectral Range Sky Radiance Model](https://cgg.mff.cuni.cz/publications/infrared-skymodel-2022/). Computer Graphics Forum, 41(7), 2022.
 
 The model is provided together with a simple renderer that demonstrates its usage and allows direct generation of sky images for various parameters.
 

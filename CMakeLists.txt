@@ -30,6 +30,7 @@ add_executable(PragueSkyModelCli ${PRAGUESKYMODEL_SRC})
 
 target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tinyexr)
 
 # GUI version
 
@@ -53,6 +54,7 @@ target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tinyexr)
 
 target_link_libraries(PragueSkyModelGui PRIVATE d3d11.lib)
 
@@ -75,6 +77,7 @@ add_executable(PragueSkyModelCli ${PRAGUESKYMODEL_SRC})
 
 target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
+target_include_directories(PragueSkyModelCli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tinyexr)
 
 target_link_libraries(PragueSkyModelCli PRIVATE TBB::tbb)
 
@@ -103,6 +106,7 @@ target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/miniz)
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui)
 target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/imgui/backends)
+target_include_directories(PragueSkyModelGui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tinyexr)
 target_include_directories(PragueSkyModelGui PRIVATE ${OPENGL_INCLUDE_DIRS})
 target_include_directories(PragueSkyModelGui PRIVATE ${SDL2_INCLUDE_DIRS})
 
