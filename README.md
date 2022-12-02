@@ -81,3 +81,7 @@ C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 wi
         - `-res` ... square output image resolution, default 512 pixels
         - `-vis` ... ground level visibility, valid range [20, 131.8] kilometers, default 59.4 kilometers
 4. Or run the GUI version using `PragueSkyModelGui`
+
+## Acknowledgments
+
+This implementation was supported by [Chaos Czech](https://corona-renderer.com/) and the Intel Graphics and Visualization Institute at Charles University.
