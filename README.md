@@ -85,3 +85,7 @@ C++ 17 is required. GUI version also requires DirectX 11 on Windows and SDL 2 wi
 ## Acknowledgments
 
 This implementation was supported by [Chaos Czech](https://corona-renderer.com/) and the Intel Graphics and Visualization Institute at Charles University.
+
+## Python version
+
+There is also a Python implementation created by Evripidis Gkanias from the University of Edinburgh. It comes in two versions: [with GUI](https://pypi.org/project/skylight-gui/) and lightweight [without GUI](https://pypi.org/project/skylight/).
